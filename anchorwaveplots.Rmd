@@ -1,0 +1,12 @@
+---
+title: "Anchorwave genome dot plots"
+output: html_notebook
+---
+
+Converting raw anchorwave data into dotplots (similar to stephens excel plots) for publication.
+
+```{r}
+
+```
+
+
