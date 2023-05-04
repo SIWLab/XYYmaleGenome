@@ -1,0 +1,662 @@
+---
+title: "TEs on NC male phased assemblies"
+author: "Zoë"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    code_folding: hide
+    default_style: dark
+    toc_depth: 6
+    fig_caption: yes
+  html_document:
+    toc_depth: '6'
+    df_print: paged
+---
+
+```{r setup, message=FALSE}
+#include=FALSE, echo=FALSE, results=FALSE, message=FALSE, warning=FALSE
+# Set the root directory
+knitr::opts_knit$set(root.dir = "~/OneDrive/GradSchool/3_Analysis/2022NewRefs")
+
+# Import libraries
+library("tidyverse") #so much love
+library("rtracklayer")
+
+# Colouring & themes
+pubTheme <-
+  theme(title = element_text(size=10), #usually 14
+        text = element_text(size=8),
+        plot.background = element_rect(fill="lightgrey"),
+        #plot.title = element_text(hjust = 0.5), #not sure yet if I want this
+        strip.background = element_rect(linetype=0,linewidth=8,
+                                        fill="grey"), #facet boxes
+        strip.text = element_text(size=10), #usually 11
+        legend.background = element_rect(fill="grey"),
+        legend.text = element_text(size=8),
+        legend.title = element_text(size=10),
+        panel.background = element_rect(fill="#FFFFFF"), #plot body
+        panel.grid = element_blank() #plot body pt2
+  )
+pubColours <- c("#2d9da6","#99b700","#8a53b6","#bf4824","#152944") #for white paper
+thesisColours <- c("#d84638","#65bc5c","#01a5bc","#516fc8","#373f51") #for darker background
+```
+
+
+# Import {.tabset}
+
+## Summary 
+
+Three *four* types of annotation files are used: all TEs, intact TEs only, and genes *and full MAKER annotation results*.
+
+## Variables
+
+```{r importVars}
+# GFF Column IDs (+ types, to prevent issues with the score column)
+colIDs = c("scaff", "source", "seqOnt", "start", "end", "score", "strand",
+         "phase", "attr")
+colTypes <- cols(col_character(), col_character(), col_character(),
+                 col_integer(), col_integer(), col_character(), 
+                 col_character(), col_character(), col_character())
+
+# Window size
+winsize=1000000 #1Mb by default
+```
+
+Also, scaffold lengths
+
+```{r scaffLengths}
+scaffLens <- tibble(
+  Scaffold = c("A1", "A2", "A4", "XY", "NeoY"),
+  NCfemLen = c(469520921, 342707286, 180207118, 
+               484402057, NA),
+  H1Len = c(466657150, 320470792, 168693024, 483481970, NA),
+  H2Len = c(467141259, 327917628, 174131248, 343398141, 347874410)
+)
+```
+
+
+## Data import
+
+Separated by karyotype
+
+```{r import NCfem}
+#### Files 
+NCfemFile <- "data/NeoXfem.fasta.mod.EDTA.TEanno.gff3"
+femIntactFile <- "data/NeoXfem.fasta.mod.EDTA.intact.gff3"
+NCfemGeneFile <- "data/NCfem.genes.gff"
+
+
+
+####   Scaffold names   ###
+NCfemScaffs <- c("Scaffold_1__2_c", "Scaffold_2__1_c", "Scaffold_4__2_c",
+                 "Scaffold_3__1_c")
+NCfemGeneScaffs <- c("Scaffold_1__2_contigs__length_484402057",
+                   "Scaffold_2__1_contigs__length_469520921",
+                   "Scaffold_4__2_contigs__length_342707286",
+                   "Scaffold_3__1_contigs__length_180207118")
+
+
+####   Importing.  ###
+# All TEs annotated by EDTA
+NCfemEDTAraw <- read_table(NCfemFile, col_names = colIDs, skip = 6,
+                           col_types = cols(source=col_skip()))
+# Only the intact TEs annotated by EDTA
+NCfemIntactRaw <- 
+  read_table(femIntactFile,col_names=colIDs, skip = 6,
+             col_types = cols(source=col_skip()))
+# The 'gene' entries from the MAKER annotation
+NCfemGenesRaw <- read_tsv(NCfemGeneFile, col_names = colIDs,
+                          col_types = cols(source = col_skip()))
+
+#### Clean up files
+rm(NCfemFile, femIntactFile, NCfemGeneFile)
+```
+
+```{r importH1}
+# Files 
+H1NCmaleFile <- "data/H1.fa.mod.EDTA.TEanno.gff3"
+H1intactFile <- "data/H1.fa.mod.EDTA.intact.gff3"
+H1geneFile <- "data/H1NCmale.genes.gff"
+H1makerFile <- "data/H1NCmale.maker.gff"
+
+# Hap1 named scaffolds
+H1maleScaffs<-c("X","A1","A2","A4") # Used to be X_NeoX
+
+
+# All TEs annotated by EDTA
+H1EDTAraw <- read_table(H1NCmaleFile, col_names = colIDs, skip = 6,
+                        col_types = colTypes)
+# Only the intact TEs annotated by EDTA
+H1IntactRaw <- 
+  read_table(H1intactFile, col_names=colIDs, skip = 6,
+             col_types = cols(source=col_skip()))
+# The 'gene' entries from the MAKER annotation
+H1GenesRaw <- read_tsv(H1geneFile, col_names = colIDs,
+                      col_types = cols(source = col_skip()))
+# All output from MAKER
+H1MakerRaw <- readGFF(H1makerFile) %>%
+  as_tibble() %>% #haven't figured out what additional utility might be in this rtracklayer table, so just changed it to a tibble
+  rename(scaff = seqid) %>% #just to get the var name to match what I use
+  filter(scaff %in% H1maleScaffs) %>% #just to make it a reasonable size
+  select(!c(source, score))
+#view(makertest)
+
+# Clean up files
+rm(H1NCmaleFile, H1intactFile, H1geneFile, H1makerFile)
+```
+
+```{r importH2}
+# Files
+H2NCmaleFile <- "data/H2.fa.mod.EDTA.TEanno.gff3"
+H2intactFile <- "data/H2.fa.mod.EDTA.intact.gff3"
+H2geneFile <- "data/H2NCmale.genes.gff"
+H2makerFile <- "data/H2NCmale.maker.gff"
+
+
+# Hap2 named scaffolds
+H2maleScaffs <- c("A1", "A2", "A4", "Y1", "Y2")
+
+# All TEs annotated by EDTA
+H2EDTAraw <- read_table(H2NCmaleFile, col_names = colIDs, skip = 6,
+                        col_types = colTypes)
+# Only the intact TEs annotated by EDTA
+H2IntactRaw <- 
+  read_table(H2intactFile, col_names=colIDs, skip = 6,
+             col_types = cols(source=col_skip()))
+# The 'gene' entries from the MAKER annotation
+H2GenesRaw <-  read_tsv(H2geneFile, col_names = colIDs,
+                        col_types = cols(source = col_skip()))
+# All output from MAKER
+H2MakerRaw <- readGFF(H2makerFile) %>%
+  as_tibble() %>% #haven't figured out what additional utility might be in this rtracklayer table, so just changed it to a tibble
+  rename(scaff = seqid) %>% #just to get the var name to match what I use
+  filter(scaff %in% H2maleScaffs) %>% #just to make it a reasonable size
+  select(!c(source, score))
+
+
+# Clean up files
+rm(H2NCmaleFile, H2intactFile, H2geneFile, H2makerFile)
+# Also clean up any other import things
+rm(colTypes, colIDs)
+```
+
+
+# Clean and Summarise
+
+## Functions
+
+```{r cleanFunctions}
+filterTEs <- function(df) {
+  df %>%
+    filter(seqOnt != "target_site_duplication", 
+         seqOnt != "long_terminal_repeat",
+         seqOnt != "repeat_region") %>%
+    group_by(scaff)
+}
+
+filterGenes <- function(df) {
+  df %>%
+    filter(!(str_detect(attr, "[Tt]ranspos")),
+           !(str_detect(attr, "[Rr]ibonuclease H")),
+           !(str_detect(attr, "[Rr]etrovirus")), 
+           !(str_detect(attr, "[Uu]nknown"))) %>%
+    group_by(scaff)
+}
+
+filterMAKER <- function(df) {
+  keepOnly <- df %>%
+    filter(type == "mRNA") %>%
+    filter(!(str_detect(Note, "[Tt]ranspos")),
+           !(str_detect(Note, "[Rr]ibonuclease H")),
+           !(str_detect(Note, "[Rr]etrovirus"))) %>%#,
+#           !(str_detect(Note, "[Uu]nknown"))) %>%
+    pull(Name)
+  df %>%
+    filter(type == "CDS") %>%
+    filter(Parent %in% keepOnly)
+}
+
+
+renameTEs <- function(df) {
+  df %>%
+    mutate( seqOnt = recode(
+      seqOnt, Copia_LTR_retrotransposon="RLC",Gypsy_LTR_retrotransposon="RLG",
+      LTR_retrotransposon="RLX",LINE_element="RIX",helitron="DHH",
+      CACTA_TIR_transposon="DTC",hAT_TIR_transposon="DTA",Mutator_TIR_transposon="DTM",
+      PIF_Harbinger_TIR_transposon="DTH",Tc1_Mariner_TIR_transposon="DTT") )
+}
+
+```
+
+```{r windowFunctions}
+window <- function(df) {
+  df %>%
+    mutate(winnum = start %/% as.numeric(winsize),
+           length = abs(end - start))
+}
+
+summarizeGenes <- function(df) {
+  df %>%
+    group_by(scaff, winnum) %>%
+    summarise( bp = sum(length), n = n() ) %>%
+    mutate(amt = bp/winsize)
+}
+
+summarizeTEs <- function(df) {
+  df %>%
+    group_by(scaff, winnum, seqOnt) %>%
+    summarise( bp = sum(length), n = n() ) %>%
+    #account for overlapping TEs leading to >100% TE density
+    mutate(amt = case_when(bp>winsize ~ 1,
+                           TRUE ~ bp/winsize))
+}
+```
+
+
+## Windowing
+
+```{r cleanFem}
+NCfemEDTA <- NCfemEDTAraw %>%
+  filter(scaff %in% NCfemScaffs) %>%
+  filterTEs %>%
+  window %>%
+  summarizeTEs %>%
+  renameTEs
+
+NCfemIntact <- NCfemIntactRaw %>%
+  filter(scaff %in% NCfemScaffs) %>%
+  filterTEs %>%
+  window %>%
+  summarizeTEs %>%
+  renameTEs
+
+NCfemGenes <- NCfemGenesRaw %>%
+  filter(scaff %in% NCfemScaffs) %>%
+  filterGenes %>%
+  window %>%
+  summarizeGenes
+```
+
+```{r cleanH1, message=FALSE}
+H1EDTA <- H1EDTAraw %>%
+  filter(scaff %in% H1maleScaffs) %>%
+  filterTEs %>%
+  window %>%
+  summarizeTEs %>%
+  renameTEs
+
+H1Intact <- H1IntactRaw %>%
+  filter(scaff %in% H1maleScaffs) %>%
+  filterTEs %>%
+  window %>%
+  summarizeTEs %>%
+  renameTEs
+
+H1Genes <- H1GenesRaw %>%
+  filter(scaff %in% H1maleScaffs) %>%
+  filterGenes %>%
+  window %>%
+  summarizeGenes
+
+H1CDS <- H1MakerRaw %>%
+  filterMAKER %>%
+  group_by(scaff) %>%
+  window %>%
+  summarizeGenes
+```
+
+```{r cleanH2, message=FALSE}
+H2EDTA <- H2EDTAraw %>%
+  filter(scaff %in% H2maleScaffs) %>%
+  filterTEs %>%
+  window %>%
+  summarizeTEs %>%
+  renameTEs
+
+H2Intact <- H2IntactRaw %>%
+  filter(scaff %in% H2maleScaffs) %>%
+  filterTEs %>%
+  window %>%
+  summarizeTEs %>%
+  renameTEs
+
+H2Genes <- H2GenesRaw %>%
+  filter(scaff %in% H2maleScaffs) %>%
+  filterGenes %>%
+  window %>%
+  summarizeGenes
+
+H2CDS <- H2MakerRaw %>%
+  filterMAKER %>%
+  group_by(scaff) %>%
+  window %>%
+  summarizeGenes
+```
+
+```{r deleteRawFiles}
+rm(NCfemEDTAraw, NCfemIntactRaw, NCfemGenesRaw)
+rm(H1EDTAraw, H1IntactRaw, H1GenesRaw, H1MakerRaw)
+rm(H2EDTAraw, H2IntactRaw, H2GenesRaw, H2MakerRaw)
+```
+
+## Divide up sex chromosomes
+
+Split the EDTA annotations for X and Y into PAR1/2, old, and new based on window number (approximate position). Join the H1 and H2 sets of TE bp per window into *allSummedTEs*.
+
+```{r TEsInSexRegions}
+XsummedTEs <- H1EDTA %>%
+  filter(scaff == "X") %>%
+  mutate(region = case_when(
+    winnum < 71   ~ "PAR1",
+    winnum < 261  ~ "Old",
+    winnum < 367  ~ "New",
+    winnum >= 367 ~ "PAR2"
+  )) %>%
+  group_by(seqOnt, region) %>%
+  summarize(summedbp = sum(bp)) %>%
+  mutate(X = case_when(
+    region == "PAR1"   ~ summedbp/71000000,
+    region == "Old"    ~ summedbp/(261000000-71000000),
+    region == "New"    ~ summedbp/(367000000-261000000),
+    region == "PAR2"   ~ summedbp/(483000000-367000000)
+  ))
+
+Y1summedTEs <- H2EDTA %>%
+  filter(scaff == "Y1") %>%
+  mutate(region = case_when(
+    winnum < 64   ~ "New",
+    winnum < 272  ~ "Old",
+    winnum >= 272 ~ "PAR1"
+  )) %>%
+  group_by(seqOnt, region) %>%
+  summarize(summedbp = sum(bp)) %>%
+  mutate(Y1 = case_when(
+    region == "New"   ~ summedbp/64000000,
+    region == "Old"    ~ summedbp/(272000000-64000000),
+    region == "PAR1"    ~ summedbp/(343000000-272000000)
+  ))
+
+Y2summedTEs <- H2EDTA %>%
+  filter(scaff == "Y2") %>%
+  mutate(region = case_when(
+    winnum < 121  ~ "PAR2",
+    winnum < 159  ~ "New",
+    winnum >= 159 ~ "Old"
+  )) %>%
+  group_by(seqOnt, region) %>%
+  summarize(summedbp = sum(bp)) %>%
+  mutate(Y2 = case_when(
+    region == "PAR2"   ~ summedbp/121000000,
+    region == "New"    ~ summedbp/(159000000-121000000),
+    region == "Old"    ~ summedbp/(348000000-159000000)
+  ))
+
+allSummedTEs <- full_join(XsummedTEs, Y1summedTEs, 
+                          by = join_by(seqOnt, region)) %>%
+  full_join(Y2summedTEs, by = join_by(seqOnt, region)) %>%
+  pivot_longer(cols = c(X, Y1, Y2), 
+               names_to = "Chromosome", values_to = "bp")
+```
+
+
+# Visualise
+
+## Functions
+
+```{r plottingFunctions}
+plotWindowedTEs <- function(df, name) {
+  ggplot(df, aes(winnum, n, colour=seqOnt), size = 0.3) +
+    geom_line() +
+    pubTheme +
+    labs(x = paste(name, "position (1Mb windows)"),
+         y = "Number of TEs", colour = "TE Type") +
+    facet_grid(vars(scaff))
+}
+
+plotGenes <- function(df, name) {
+  ggplot(df, aes(winnum,n)) +
+  geom_line() +
+  pubTheme + 
+  labs(x = paste(name, "Position (1Mb windows)"), y = "Number of genes") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+}
+
+plotElements <- function(TEs, genes, name) {
+  ggplot() +
+  geom_line(data = TEs, aes(winnum, amt, colour=seqOnt), linewidth=0.3) +
+  geom_line(data = genes, aes(winnum,amt)) +
+  #ylim(0,1) +
+  pubTheme +
+  labs(x = paste(name, "position (1Mb windows)"), 
+       y = paste(name, "Fraction of window"), colour="TE Type") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+}
+
+plotFacetedTEs <- function(df, name) {
+  ggplot(df, aes(winnum,n), size = 0.3) +
+  geom_line() +
+  pubTheme +
+  labs(x = paste(name, "position (1Mb windows)"),
+       y = "Number of TEs", colour = "TE Type") +
+  facet_grid(vars(seqOnt), vars(scaff), space = "free", scale = "free")
+}
+```
+
+```{r barPlots}
+# Control number of elements for Scaffold Length
+controlH1Counts <- function(df) {
+  df %>%
+    group_by(seqOnt, scaff) %>%
+    tally() %>%
+    mutate( num = case_when(
+      scaff == "A1"     ~ n/scaffLens$H1Len[1],
+      scaff == "A2"     ~ n/scaffLens$H1Len[2],
+      scaff == "A4"     ~ n/scaffLens$H1Len[3],
+      scaff == "X"      ~ n/scaffLens$H1Len[4]
+    )) 
+}
+controlH2Counts <- function(df) {
+  df %>%
+    group_by(seqOnt, scaff) %>%
+    tally() %>%
+    mutate( num = case_when(
+      scaff == "A1"   ~ n/scaffLens$H2Len[1],
+      scaff == "A2"   ~ n/scaffLens$H2Len[2],
+      scaff == "A4"   ~ n/scaffLens$H2Len[3],
+      scaff == "Y1" ~ n/scaffLens$H2Len[4],
+      scaff == "Y2" ~ n/scaffLens$H2Len[5]
+    ))
+}
+
+# Divide length of elements by Scaffold Length
+controlH1Len <- function(df) {
+  df %>%
+    group_by(seqOnt, scaff) %>%
+    summarise(n = sum(bp)) %>%
+    mutate( num = case_when(
+      scaff == "A1"     ~ n/scaffLens$H1Len[1],
+      scaff == "A2"     ~ n/scaffLens$H1Len[2],
+      scaff == "A4"     ~ n/scaffLens$H1Len[3],
+      scaff == "X"      ~ n/scaffLens$H1Len[4]
+    )) 
+}
+controlH2Len <- function(df) {
+  df %>%
+    group_by(seqOnt, scaff) %>%
+    summarise(n = sum(bp)) %>%
+    mutate( num = case_when(
+      scaff == "A1"   ~ n/scaffLens$H2Len[1],
+      scaff == "A2"   ~ n/scaffLens$H2Len[2],
+      scaff == "A4"   ~ n/scaffLens$H2Len[3],
+      scaff == "Y1" ~ n/scaffLens$H2Len[4],
+      scaff == "Y2" ~ n/scaffLens$H2Len[5]
+    ))
+}
+
+# Make bar plot 
+plotCols <- function(df, name, legPos) {
+  ggplot(df, aes(x = seqOnt, y = num, fill = scaff)) +
+  geom_col(position = position_dodge()) +
+  pubTheme + theme(legend.position = legPos) +
+  labs(x = "TE Type", y = "Number in window divided by scaffold length", 
+       fill = paste(name, "scaffold"))
+}
+
+# Full chromosomal proportions
+plotProportions <- function(TEs, Genes, name, legPos) {
+  TEsums <- TEs %>%
+    group_by(scaff) %>%
+    summarize(TEs = sum(bp))
+  geneSums <- Genes %>%
+    group_by(scaff) %>%
+    summarize(Genes = sum(bp))
+  df <- left_join(TEsums, geneSums) %>%
+    pivot_longer(cols = c(TEs, Genes), 
+                 names_to = "element", values_to = "bp")
+  
+  ggplot(df, aes(x = scaff, y = bp, fill = element)) +
+    geom_col() +
+    pubTheme + theme(legend.position = legPos) +
+    labs(x = paste(name, "chromosome"), y = "Base pairs", 
+         fill = "Element type")
+}
+```
+
+
+## TE barplots
+
+Plot fraction of window and count data for TEs.
+
+```{r fractionCols, message=FALSE}
+H1EDTA %>%
+  controlH1Len() %>%
+  plotCols("H1", c(0.25, 0.7))
+
+H2EDTA %>%
+  controlH2Len() %>%
+  plotCols("H2", c(0.25, 0.7))
+
+H1Intact %>%
+  controlH1Len() %>%
+  plotCols("H1", c(0.25, 0.7))
+
+H2Intact %>%
+  controlH2Len() %>%
+  plotCols("H2", c(0.25, 0.7))
+```
+
+```{r countCols, message=FALSE}
+H1EDTA %>%
+  controlH1Counts() %>%
+  plotCols("H1", c(0.25, 0.7))
+
+H2EDTA %>%
+  controlH2Counts() %>%
+  plotCols("H2", c(0.25, 0.7))
+
+H1Intact %>%
+  controlH1Counts() %>%
+  plotCols("H1", c(0.25, 0.7))
+
+H2Intact %>%
+  controlH2Counts() %>%
+  plotCols("H2", c(0.25, 0.7))
+```
+
+## Sex chromosome proportions
+
+```{r plotSummedTEs}
+ggplot(allSummedTEs, aes(x = region, y = bp, fill = Chromosome)) +
+  geom_col(position = position_dodge()) +
+  pubTheme + scale_fill_manual(values = pubColours) +
+  labs(x = "Region", y = "Fraction of region occupied by TEs", 
+       fill = "Chromosome") #+
+  #facet_grid(vars(seqOnt))
+
+ggplot(allSummedTEs, aes(x = Chromosome, y = bp, fill = region)) +
+  geom_col(position = position_dodge()) +
+  pubTheme + scale_fill_manual(values = pubColours) +
+  labs(x = "Chromosome", y = "Fraction of region occupied by TEs", 
+       fill = "Region")
+
+allSummedTEs %>%
+  #filter(seqOnt == "DTM") %>%
+  ggplot(aes(x = seqOnt, y = bp, fill = Chromosome)) +
+  geom_col(position = position_dodge()) +
+  pubTheme + scale_fill_manual(values = pubColours) +
+  #theme(legend.position = c(0.2,0.8)) +
+  labs(x = "Region", y = "Fraction of region occupied by TEs", 
+       fill = "Chromosome") +
+  facet_grid(vars(region))
+```
+
+## Fraction of window annotated with Genes, TEs
+
+```{r plotElementDensities}
+plotElements(H1EDTA, H1Genes, "H1")
+plotElements(H2EDTA, H2Genes, "H2")
+```
+
+# Testing things
+
+## CDS instead of gene?
+
+```{r testingGeneFiltering}
+H1MakerRaw %>%
+  filter(type == "CDS") %>%
+  group_by(scaff) %>%
+  window %>%
+  summarizeGenes %>%
+  ggplot() +
+  geom_line(data = H1Genes, aes(winnum, amt), colour = pubColours[1], size = 1.1) +
+  geom_line(aes(winnum, amt), colour = pubColours[3], size = 1.2) +
+  geom_line(data = H1CDS, aes(winnum, amt), colour = pubColours[2], size = 1.1) +
+  pubTheme +
+  labs(x = "H1 position (1Mb windows)",
+       y = "CDS frequency") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+```
+
+```{r CDSvsGene, message=FALSE}
+# Plot counts
+H1CDS %>%
+  ggplot() +
+  geom_line(data = H1Genes, aes(winnum,  n), colour = pubColours[1], size = 1.1) +
+  geom_line(aes(winnum, n), colour = pubColours[2], size = 1.1) +
+  pubTheme +
+  labs(x = "H1 position (1Mb windows)", 
+       y = "Element count") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+
+H2CDS %>%
+  ggplot() +
+  geom_line(data = H2Genes, aes(winnum, n), colour = pubColours[1], size = 1.1) +
+  geom_line(aes(winnum, n), colour = pubColours[2], size = 1.1) +
+  pubTheme +
+  labs(x = "H2 position (1Mb windows)", 
+       y = "Element count") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+
+
+
+
+# Plot densities (equivalent to bp)
+H1CDS %>%
+  ggplot() +
+  geom_line(data = H1Genes, aes(winnum, amt), colour = pubColours[1]) +
+  geom_line(aes(winnum, amt), colour = pubColours[2]) +
+  pubTheme +
+  labs(x = "H1 position (1Mb windows)", 
+       y = "Fraction of window") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+
+H2CDS %>%
+  ggplot() +
+  geom_line(data = H2Genes, aes(winnum, amt), colour = pubColours[1]) +
+  geom_line(aes(winnum, amt), colour = pubColours[2]) +
+  pubTheme +
+  labs(x = "H2 position (1Mb windows)", 
+       y = "Fraction of window") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+```
+
