@@ -1,0 +1,857 @@
+---
+title: "Relaxed Selection against TE Insertions"
+author: "Zoë Humphries"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    code_folding: hide
+    default_style: dark
+    toc_depth: 6
+    fig_caption: yes
+---
+
+```{r setup, include=FALSE}
+#echo=FALSE, results=FALSE, message=FALSE, warning=FALSE
+# Set the root directory
+knitr::opts_knit$set(root.dir = "~/OneDrive/GradSchool/3_Analysis/2022NewRefs")
+
+# Import libraries
+library("tidyverse") #so much love
+
+# Colouring & themes
+pubTheme <-
+  theme(title = element_text(size=10), #usually 14
+        text = element_text(size=8),
+        plot.background = element_rect(fill="lightgrey"),
+        #plot.title = element_text(hjust = 0.5), #not sure yet if I want this
+        strip.background = element_rect(linetype=0,linewidth=8,
+                                        fill="grey"), #facet boxes
+        strip.text = element_text(size=10), #usually 11
+        legend.background = element_rect(fill="grey"),
+        legend.text = element_text(size=8),
+        legend.title = element_text(size=10),
+        panel.background = element_rect(fill="#FFFFFF"), #plot body
+        panel.grid = element_blank() #plot body pt2
+  )
+#thesisColours <- c("#d84638","#65bc5c","#01a5bc","#516fc8","#373f51") #dark
+pubColours <- c("#2d9da6","#99b700","#8a53b6","#bf4824","#152944") #for white paper
+```
+
+# Data {.tabset}
+
+## Input 
+
+Output from bedtools coverage:
+- chromosome
+- region (upstream/downstream of gene, intron, or exon) start
+- region end
+- number of TEs that overlapped a region by at least one bp
+- number of bases in the region with coverage from a TE
+- region length
+- fraction of bases in the region with coverage from a TE
+
+## Created
+
+windowAndMerge output variables:
+- n :: the number of elements in the window (upNum=downNum unless at the beginning/end of the chromosome)
+- sum :: the number of TEs in elements in the window
+- len :: the total number of TE bp in regions within the window
+- avg :: the mean frequency of TEs in elements in the window
+
+# Import & Analysis {.tabset}
+
+## Functions and variables
+
+```{r variables, message=FALSE}
+winsize = 1000000
+# Column Names
+colIDs <- c("scaff","source","seqOnt","start","end","score","strand","phase",
+            "attr", "count", "TElen", "eleLen", "density")
+colsKeep <- c("scaff", "start", "end", "strand", "attr", "count", "TElen", 
+              "eleLen", "density")
+
+# Scaffolds (too many scaffs leads to plotting issues)
+#NCfemScaffs <- c("A1", "A2", "A4", "X_NeoX")
+H1scaffs <- c("A1", "A2", "A4", "X")
+H2scaffs <- c("A1", "A2", "A4", "Y1", "Y2")
+
+# Division points for the sex chromosome regions 
+
+```
+
+```{r importFunction}
+#Make a list of dataframes for each region
+importFiles <- function(name) {
+  # Create file list based on expected dir layout
+  upstreamTEsFile <- paste("data/",name,".TEsUpstream", sep="")
+  downstreamTEsFile <- paste("data/",name,".TEsDownstream", sep="")
+  exonTEsFile <- paste("data/",name,".TEsExons", sep="")
+  intronTEsFile <- paste("data/",name,".TEsIntrons", sep="")
+  
+  # Actually import the files with those names
+  upstreamTEs <- read_tsv(upstreamTEsFile, col_names = colIDs) %>%
+    select(all_of(colsKeep)) #%>%
+    #rename(upCount = count, upDensity = density)
+  downstreamTEs <- read_tsv(downstreamTEsFile, col_names = colIDs) %>%
+    select(all_of(colsKeep)) #%>%
+    #rename(downCount = count, downDensity = density)
+  exonTEs <- read_tsv(exonTEsFile, col_names = colIDs) %>%
+    select(all_of(colsKeep)) #%>%
+    #rename(exonCount = count, exonDensity = density)
+  intronTEs  <- read_tsv(intronTEsFile, col_names = colIDs) %>%
+    select(all_of(colsKeep)) #%>% 
+    #rename(intronCount = count, intronDensity = density)
+  
+  return( list(upstreamTEs, downstreamTEs, exonTEs, intronTEs) )
+}
+```
+
+Window the data so it's a reasonable size for plotting
+
+```{r summarizeFunction}
+windowAndMerge <- function(dfList, scaffList) {
+  
+  upTEs <- dfList[[1]] %>%
+    filter(scaff %in% scaffList) %>%
+    mutate(winnum = start%/%as.numeric(winsize)) %>%
+    group_by(scaff, winnum) %>%
+    summarise(upSize = sum(eleLen), upSum = sum(count), upNum = n(),
+              upLen = sum(TElen), upAvg = mean(density))
+  downTEs <- dfList[[2]] %>%
+    filter(scaff %in% scaffList) %>%
+    mutate(winnum = start%/%as.numeric(winsize)) %>%
+    group_by(scaff, winnum) %>%
+    summarise(downSize = sum(eleLen), downSum = sum(count), downNum = n(),
+              downLen = sum(TElen), downAvg = mean(density))
+  exTEs <- dfList[[3]] %>%
+    filter(scaff %in% scaffList) %>%
+    mutate(winnum = start%/%as.numeric(winsize)) %>%
+    group_by(scaff, winnum) %>%
+    summarise(exonSize = sum(eleLen), exonSum = sum(count), exonNum = n(),
+              exonLen = sum(TElen), exonAvg = mean(density))
+  inTEs <- dfList[[4]] %>%
+    filter(scaff %in% scaffList) %>%
+    mutate(winnum = start%/%as.numeric(winsize)) %>%
+    group_by(scaff, winnum) %>%
+    summarise(intronSize = sum(eleLen), intronSum = sum(count), intronNum = n(),
+              intronLen = sum(TElen), intronAvg = mean(density))
+    
+  allTogether <- full_join(upTEs, downTEs) %>%
+    full_join(exTEs) %>%
+    full_join(inTEs)
+
+  
+  #returnCounts <- allTogether %>%
+  #  pivot_longer(c(upSum, downSum, exonSum, intronSum),
+  #               names_to = "AreaC", values_to = "sum") %>%
+  #  pivot_longer(c(upAvg, downAvg, exonAvg, intronAvg),
+  #               names_to = "AreaA", values_to = "avg") %>%
+  #  pivot_longer(c(upNum, downNum, exonNum, intronNum),
+  #               names_to = "AreaN", values_to = "count")
+  
+  return(allTogether)
+}  
+```
+
+Merge the H1 and H2 data by 1:1 ortholog pairs
+
+```{r genewiseMergeFunction}
+genewise <- function(H1list, H2list, pairList) {
+  {
+    H1tibble <- H1list %>%
+      # Flatten the list of tibbles, adding a new row to specify location
+      list_rbind(, names_to = "location") %>%
+      # Only use the chromosome-scale scaffolds
+      filter(scaff %in% H1scaffs) %>%
+      # There are duplicates because of the ortholog data formatting
+      distinct() %>%
+      # Rename the location var so the values are meaningful & extract the
+      #gene name from the attribute column
+      mutate(location = case_when(location == 1 ~ "upstream",
+                                  location == 2 ~ "downstream",
+                                  location == 3 ~ "intron",
+                                  location == 4 ~ "exon"),
+             H1 = str_split_i( 
+               str_match(attr, "^ID=(.+?);")[,2],
+               pattern = "-", 1) ) %>%
+      # Keep only the useful columns (don't need end, strand, or attr)
+      select(location, scaff, start, count:density, H1) %>%
+      # Find the H2 gene match for H1 orthologs (and don't keep any non-orthologs)
+      inner_join(pairList, by = join_by(H1))
+  } # Make the H1 tibble
+  {
+    H2tibble <- H2list %>%
+      list_rbind(, names_to = "location") %>%
+      filter(scaff %in% H2scaffs) %>%
+      distinct() %>%
+      mutate(location = case_when(location == 1 ~ "upstream",
+                                  location == 2 ~ "downstream",
+                                  location == 3 ~ "intron",
+                                  location == 4 ~ "exon"),
+             H2 = str_split_i( 
+               str_match(attr, "^ID=(.+?);")[,2],
+               pattern = "-", 1) ) %>%
+      select(location, scaff, start, count:density, H2) %>%
+      inner_join(pairList, by = join_by(H2))
+  } # Make the H2 tibble
+  
+  paired <- full_join(H1tibble, H2tibble, by = c("H1", "H2", "location"),
+                                      suffix = c("H1", "H2"))
+  
+  return(paired) 
+}
+```
+
+
+## Import
+
+Actually importing the data & summarizing it
+
+```{r import, message=FALSE}
+# NC male Haplotype 1 
+H1list <- importFiles("orthoH1")
+H1counts <- windowAndMerge(H1list, H1scaffs)
+
+# NC male Haplotype 2
+H2list <- importFiles("orthoH2")
+H2counts <- windowAndMerge(H2list, H2scaffs)
+
+# Gene pairing information
+pairList <- read_tsv("data/pairs.clean", col_names = c("H1","H2")) %>%
+  #mutate(H1 = gsub("\\*", "", H1),
+  #       H2 = gsub("\\*", "", H2)) %>%
+  distinct()
+```
+
+
+## Looking at regions within the sex chromosomes
+
+```{r labelSexRegions}
+XregionTEs <- H1counts %>%
+  select(scaff, winnum, upLen, downLen,, exonLen, intronLen,
+         upSize, downSize, exonSize, intronSize) %>%
+  filter(scaff == "X") %>%
+  mutate(region = case_when(
+    winnum < 71   ~ "PAR1",
+    winnum < 261  ~ "Old",
+    winnum < 367  ~ "New",
+    winnum >= 367 ~ "PAR2"
+  )) %>%
+  group_by(region) %>%
+  summarize(up = sum(upLen, na.rm=T) / sum(upSize, na.rm=T),
+            down = sum(downLen, na.rm=T) / sum(downSize, na.rm=T),
+            exon = sum(exonLen, na.rm=T) / sum(exonSize, na.rm=T),
+            intron = sum(intronLen, na.rm=T) / sum(intronSize, na.rm=T)) %>%
+  # summarize(up = sum(upSize, na.rm=T), 
+  #           down = sum(downSize, na.rm=T),
+  #           exon = sum(exonSize, na.rm=T), 
+  #           intron = sum(intronSize, na.rm=T)) %>%
+  pivot_longer(cols = up:intron, names_to = "location", values_to = "X")
+
+
+Y1regionTEs <- H2counts %>%
+  select(scaff, winnum, upLen, downLen,, exonLen, intronLen,
+         upSize, downSize, exonSize, intronSize) %>%
+  filter(scaff == "Y1") %>%
+  mutate(region = case_when(
+    winnum < 64   ~ "New",
+    winnum < 272  ~ "Old",
+    winnum >= 272 ~ "PAR1"
+  ))%>%
+  group_by(region) %>%
+  summarize(up = sum(upLen, na.rm=T) / sum(upSize, na.rm=T),
+            down = sum(downLen, na.rm=T) / sum(downSize, na.rm=T),
+            exon = sum(exonLen, na.rm=T) / sum(exonSize, na.rm=T),
+            intron = sum(intronLen, na.rm=T) / sum(intronSize, na.rm=T)) %>%
+  # summarize(up = sum(upSize, na.rm=T), 
+  #           down = sum(downSize, na.rm=T),
+  #           exon = sum(exonSize, na.rm=T), 
+  #           intron = sum(intronSize, na.rm=T)) %>%
+  pivot_longer(cols = up:intron, names_to = "location", values_to = "Y1")
+
+Y2regionTEs <- H2counts %>%
+  select(scaff, winnum, upLen, downLen,, exonLen, intronLen,
+         upSize, downSize, exonSize, intronSize) %>%
+  filter(scaff == "Y2") %>%
+  mutate(region = case_when(
+    winnum < 121  ~ "PAR2",
+    winnum < 159  ~ "New",
+    winnum >= 159 ~ "Old"
+  )) %>%
+  group_by(region) %>%
+  summarize(up = sum(upLen, na.rm=T) / sum(upSize, na.rm=T),
+            down = sum(downLen, na.rm=T) / sum(downSize, na.rm=T),
+            exon = sum(exonLen, na.rm=T) / sum(exonSize, na.rm=T),
+            intron = sum(intronLen, na.rm=T) / sum(intronSize, na.rm=T)) %>%
+  # summarize(up = sum(upSize, na.rm=T), 
+  #           down = sum(downSize, na.rm=T),
+  #           exon = sum(exonSize, na.rm=T), 
+  #           intron = sum(intronSize, na.rm=T)) %>%
+  pivot_longer(cols = up:intron, names_to = "location", values_to = "Y2")
+
+
+allRegionTEs <- full_join(XregionTEs, Y1regionTEs, 
+                          by = join_by(region, location)) %>%
+  full_join(Y2regionTEs, by = join_by(region, location)) %>%
+  pivot_longer(cols = c(X, Y1, Y2), 
+               names_to = "Chromosome", values_to = "Frequency")
+```
+
+Region "sizes" = sum of all element bps in the region
+
+```{r sexRegionSizes}
+XregionSizes <- H1counts %>%
+  select(scaff, winnum, upSize, downSize, exonSize, intronSize) %>%
+  filter(scaff == "X") %>%
+  mutate(region = case_when(
+    winnum < 71   ~ "PAR1",
+    winnum < 261  ~ "Old",
+    winnum < 367  ~ "New",
+    winnum >= 367 ~ "PAR2"
+  )) %>%
+  group_by(region) %>%
+#  summarize(up = sum(upLen, na.rm=T) / sum(upSize, na.rm=T),
+#            down = sum(downLen, na.rm=T) / sum(downSize, na.rm=T),
+#            exon = sum(exonLen, na.rm=T) / sum(exonSize, na.rm=T),
+#            intron = sum(intronLen, na.rm=T) / sum(intronSize, na.rm=T)) %>%
+   summarize(up = sum(upSize, na.rm=T), 
+             down = sum(downSize, na.rm=T),
+             exon = sum(exonSize, na.rm=T), 
+             intron = sum(intronSize, na.rm=T)) %>%
+  pivot_longer(cols = up:intron, names_to = "location", values_to = "X")
+
+
+Y1regionSizes <- H2counts %>%
+  select(scaff, winnum, upLen, downLen,, exonLen, intronLen,
+         upSize, downSize, exonSize, intronSize) %>%
+  filter(scaff == "Y1") %>%
+  mutate(region = case_when(
+    winnum < 64   ~ "New",
+    winnum < 272  ~ "Old",
+    winnum >= 272 ~ "PAR1"
+  ))%>%
+  group_by(region) %>%
+  # summarize(up = sum(upLen, na.rm=T) / sum(upSize, na.rm=T),
+  #           down = sum(downLen, na.rm=T) / sum(downSize, na.rm=T),
+  #           exon = sum(exonLen, na.rm=T) / sum(exonSize, na.rm=T),
+  #           intron = sum(intronLen, na.rm=T) / sum(intronSize, na.rm=T)) %>%
+  summarize(up = sum(upSize, na.rm=T),
+            down = sum(downSize, na.rm=T),
+            exon = sum(exonSize, na.rm=T),
+            intron = sum(intronSize, na.rm=T)) %>%
+  pivot_longer(cols = up:intron, names_to = "location", values_to = "Y1")
+
+Y2regionSizes <- H2counts %>%
+  select(scaff, winnum, upLen, downLen,, exonLen, intronLen,
+         upSize, downSize, exonSize, intronSize) %>%
+  filter(scaff == "Y2") %>%
+  mutate(region = case_when(
+    winnum < 121  ~ "PAR2",
+    winnum < 159  ~ "New",
+    winnum >= 159 ~ "Old"
+  )) %>%
+  group_by(region) %>%
+  # summarize(up = sum(upLen, na.rm=T) / sum(upSize, na.rm=T),
+  #           down = sum(downLen, na.rm=T) / sum(downSize, na.rm=T),
+  #           exon = sum(exonLen, na.rm=T) / sum(exonSize, na.rm=T),
+  #           intron = sum(intronLen, na.rm=T) / sum(intronSize, na.rm=T)) %>%
+  summarize(up = sum(upSize, na.rm=T),
+            down = sum(downSize, na.rm=T),
+            exon = sum(exonSize, na.rm=T),
+            intron = sum(intronSize, na.rm=T)) %>%
+  pivot_longer(cols = up:intron, names_to = "location", values_to = "Y2")
+
+
+allRegionSizes <- full_join(XregionTEs, Y1regionTEs, 
+                          by = join_by(region, location)) %>%
+  full_join(Y2regionTEs, by = join_by(region, location)) %>%
+  pivot_longer(cols = c(X, Y1, Y2), 
+               names_to = "Chromosome", values_to = "Size")
+```
+
+
+
+## Per-Gene Comparisons
+
+Want to look at differences per gene instead of in aggregate!
+
+There are usually multiple rows for introns/exons per gene - want to summarise
+
+```{r geneByGene}
+#robustMin <- function(x) {if (length(x)>0) min(x) else NA}
+pairedGenesMulti <- genewise(H1list, H2list, pairList)
+
+# Summarise the exons/introns per gene
+pairedGenes <- pairedGenesMulti %>% 
+  group_by(H1, H2, location, scaffH1, scaffH2) %>%
+  summarize(startH1 = robustMin(startH1), countH1 = sum(countH1), 
+            TElenH1 = sum(TElenH1), eleLenH1 = sum(eleLenH1),
+            frequencyH1 = mean(densityH1), 
+            startH2 = robustMin(startH2), countH2 = sum(countH2), 
+            TElenH2 = sum(TElenH2), eleLenH2 = sum(eleLenH2),
+            frequencyH2 = mean(densityH2), 
+            .groups = "keep")
+```
+
+# Visualization
+
+## Across Chromosomes {.tabset}
+
+### TE Frequency
+
+Bedtools provides a TE *frequency* measurement (how much of the feature's length overlaps with an annotated TE), which I averaged within each 1Mb window.
+
+```{r averageTEfrequency}
+H1counts %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upAvg, colour = "Upstream")) +
+  geom_line(aes(y = downAvg, colour = "Downstream")) +
+  geom_line(aes(y = exonAvg, colour = "Exon")) +
+  geom_line(aes(y = intronAvg, colour = "Intron")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H1 Position (1Mb windows)", 
+       y = "Average TE Frequency in this Window",
+       colour = "Location") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+H2counts %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upAvg, colour = "Upstream")) +
+  geom_line(aes(y = downAvg, colour = "Downstream")) +
+  geom_line(aes(y = exonAvg, colour = "Exon")) +
+  geom_line(aes(y = intronAvg, colour = "Intron")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H2 Position (1Mb windows)", 
+       y = "Average TE Frequency in this Window",
+       colour = "Location") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+```
+
+Generally, the 1kb regions up/downstream of genes contain a larger proportion of TEs than introns or exons do. There are some interestingly TE-ridden introns, though, too.
+
+
+### TE Count
+
+Bedtools overlap also provides the *number* of TEs in a given feature, which is slightly more relevant to my interest in recent insertions. I averaged this sum within each 1Mb window. 
+
+```{r plotTEsum}
+H1counts %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upSum, colour = "Upstream")) +
+  geom_line(aes(y = downSum, colour = "Downstream")) +
+  geom_line(aes(y = exonSum, colour = "Exon")) +
+  geom_line(aes(y = intronSum, colour = "Intron")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H1 Position (1Mb windows)", 
+       y = "Windowed TE count",
+       colour = "Location") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+H2counts %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upSum, colour = "Upstream")) +
+  geom_line(aes(y = downSum, colour = "Downstream")) +
+  geom_line(aes(y = exonSum, colour = "Exon")) +
+  geom_line(aes(y = intronSum, colour = "Intron")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H2 Position (1Mb windows)", 
+       y = "Windowed TE count",
+       colour = "Location") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+```
+
+Occasional huge spikes in the number of TEs in H1 introns made things hard to interpret for the rest of the features.
+ 
+```{r plotH1sumWithoutIntrons}
+H1counts %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upSum, colour = "Upstream")) +
+  geom_line(aes(y = downSum, colour = "Downstream")) +
+  geom_line(aes(y = exonSum, colour = "Exon")) +
+#  geom_line(aes(y = intronSum, colour = "Intron")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H1 Position (1Mb windows)", 
+       y = "Windowed TE count",
+       colour = "Location") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+```
+
+I also divided each window's TE sum metric by the number of features in it (e.g. the average number of intron TEs in the window is divided by the number of introns).
+
+```{r plotCountOverFeatureCount}
+H1counts %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upSum/upNum, colour = "Upstream")) +
+  geom_line(aes(y = downSum/downNum, colour = "Downstream")) +
+  geom_line(aes(y = exonSum/exonNum, colour = "Exon")) +
+#  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H1 Position (1Mb windows)", 
+       y = "Windowed count divided by feature count",
+       colour = "Location") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+H2counts %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upSum/upNum, colour = "Upstream")) +
+  geom_line(aes(y = downSum/downNum, colour = "Downstream")) +
+  geom_line(aes(y = exonSum/exonNum, colour = "Exon")) +
+#  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H2 Position (1Mb windows)", 
+       y = "Windowed count divided by feature count",
+       colour = "Location") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+```
+
+With the unfiltered data set, there were an average of 2 TEs within 1kb of genes. With the filtered set, it looks about the same but with variation closer to what I'd expect (low levels in the regions of high gene density).
+
+
+### Introns are Weird
+
+I thought this section was going to be unhelpful with the filtered data set, but this is definitely helping to look into what's going on with the introns on the X chromosome.
+
+```{r INTRONScomparingNumAndSumFor}
+H1counts %>%
+  select(c(scaff, winnum, intronNum, intronSum)) %>%
+  ggplot(aes(x = winnum)) +
+  geom_line(aes(y = intronNum, colour = "Introns")) +
+  geom_line(aes(y = intronSum, colour = "TEs in Introns")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H1 Position (1Mb windows)", y = "Average in Window",
+       colour = "Feature Type") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+H2counts %>%
+  select(c(scaff, winnum, intronNum, intronSum)) %>%
+  ggplot(aes(x = winnum)) +
+  geom_line(aes(y = intronNum, colour = "Introns")) +
+  geom_line(aes(y = intronSum, colour = "TEs in Introns")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  labs(x = "H2 Position (1Mb windows)", y = "Average in Window",
+       colour = "Feature Type") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+```
+
+The H1 intron data fits really nicely with my expectations but I find H2 intron data very confusing. I don't know why there are so many fewer introns in the H2 gene annotation...
+
+
+## Bar plots 
+
+### Region Sizes
+
+```{r barplotSexChromSizes, warning=FALSE}
+ggplot(allRegionSizes, aes(x = region, y = Size, fill = Chromosome)) +
+  geom_col(position = position_dodge()) +
+  pubTheme + scale_fill_manual(values = pubColours) +
+  labs(x = "Region", y = "Number of bp in this region", 
+       fill = "Chromosome") +
+  facet_grid(vars(location), space = "free")
+```
+
+X chromosome introns seem to be much more frequent/larger for these 1:1 orthologs. 
+
+### Divisions within sex chromosomes
+
+```{r barplotsSexChroms, warning=FALSE}
+ggplot(allRegionTEs, aes(x = region, y = Frequency, fill = Chromosome)) +
+  geom_col(position = position_dodge()) +
+  pubTheme + scale_fill_manual(values = pubColours) +
+  labs(x = "Region", y = "Frequency of TEs", 
+       fill = "Chromosome") +
+  facet_grid(vars(location), space = "free")
+```
+
+The number of introns in genes on the X is very high, which *might* help explain why there are so many TEs in them?? Overall, this is just super weird...
+
+## Genewise Comparisons
+
+```{r genewisePrep}
+pairedGenes %>%
+  filter(scaffH2 == "Y1" | scaffH2 == "Y2") %>%
+  filter(scaffH1 == "X") %>%
+  ggplot() +
+  geom_point(aes(x = frequencyH1, y = frequencyH2, colour = location), 
+             alpha=0.3) +
+  geom_abline() +
+  pubTheme + scale_colour_manual(values = pubColours) + 
+  theme(legend.position = "none") +
+  labs(x = "TE frequency for H1", y = "TE frequency for H2", colour = "Size") +
+  facet_grid(vars(location))
+```
+
+
+
+
+# Unused
+
+Testing for genewise function 
+
+
+```{r testingGenewise, eval=FALSE}
+#rm(genePairs, inPairs, upPairs, allPairs, pair1, pair2, pairList)
+
+{
+  gene2 <- pairList$H2[1]
+#pattern2 <- paste("^ID=",gene2, sep = "")
+
+pair1 <- H1list[[3]] %>%
+  filter( str_detect(attr, gene1) ) %>%
+  #distinct() %>%
+  select(scaff, start, count:density) %>%
+  mutate("geneH1" = gene1, "geneH2" = gene2) %>%
+  group_by(scaff, geneH1, geneH2) %>%
+  summarize(start = min(start), count = sum(count), TElen = sum(TElen), 
+            eleLen = sum(eleLen),density = mean(density))
+pair2 <- H2list[[3]] %>%
+  filter( str_detect(attr, gene2) ) %>%
+  #distinct() %>%
+  select(!end:attr) %>%
+  mutate("gene1" = gene1, "gene2" = gene2) 
+
+full_join(pair1, pair2, by = c("gene1", "gene2"))
+} #small test sets
+
+{
+    for (i in 1:len) {
+    # Save the pair's gene name for H1 and H2
+    gene1 <- pairList$H1[i]
+    gene2 <- pairList$H2[i]
+    #print(gene1)
+    
+    # Each gene will only have one upstream region and one downstream region
+    for (j in 1:2) {
+      pair1 <- H1list[[j]] %>%
+        filter( str_detect(attr, gene1) ) %>%
+        distinct() %>%
+        select(scaff, start, count:density) %>%
+        mutate("geneH1" = gene1, "geneH2" = gene2, "location" = j)
+      print(pair1)
+      pair2 <- H2list[[j]] %>%
+        filter( str_detect(attr, gene2) ) %>%
+        distinct() %>%
+        select(scaff, start, count:density) %>%
+        mutate("geneH2" = gene2, "geneH1" = gene1, "location" = j)
+      print(pair2)
+      allPairs[[i]] <- full_join(pair1, pair2,
+                                      by = c("geneH1", "geneH2", "location"),
+                                      suffix = c("H1", "H2"))
+    } #end upstream/downstream search (allPairs[[1]] and allPairs[[2]] done)
+    
+    # There may be several exons and introns per gene - sum/average the values
+    for (j in 3:4) {
+      pair1 <- H1list[[j]] %>%
+        filter( str_detect(attr, gene1) ) %>%
+        distinct() %>%
+        select(scaff, start, count:density) %>%
+        mutate("geneH1" = gene1, "geneH2" = gene2, "location" = j)  %>%
+        group_by(scaff, geneH1, geneH2, location) %>%
+        summarize(start = robustMin(start), count = sum(count), 
+                  TElen = sum(TElen), eleLen = sum(eleLen),
+                  density = mean(density), .groups = "keep")
+      print(pair1)
+      pair2 <- H2list[[j]] %>%
+        filter( str_detect(attr, gene2) ) %>%
+        distinct() %>%
+        select(scaff, start, count:density) %>%
+        mutate("geneH2" = gene2, "geneH1" = gene1, "location" = j) %>%
+        group_by(scaff, geneH1, geneH2, location) %>%
+        summarize(start = robustMin(start), count = sum(count), 
+                  TElen = sum(TElen), eleLen = sum(eleLen),
+                  density = mean(density), .groups = "keep")
+      print(pair2)
+      allPairs[[j]][[i]] <- full_join(pair1, pair2, 
+                                      by = c("geneH1", "geneH2", "location"),
+                                      suffix = c("H1", "H2"))
+    } #end exon/intron search
+    
+  } #end gene pair search
+} #iterating over H1list and H2list
+
+{
+upPair1 <- H1list[[1]] %>%
+      filter( str_detect(attr, gene1) ) %>%
+      select(scaff, count:density) %>%
+      mutate("gene1" = gene1, "gene2" = gene2,
+             "count1" = count, "TElen1" = TElen, 
+             "eleLen1" = eleLen, "density1" = density) %>%
+      select(!count:density)
+    downPair1 <- H1list[[2]] %>%
+      filter( str_detect(attr, gene1) ) %>%
+      select(scaff, count:density) %>%
+      mutate("gene1" = gene1, "gene2" = gene2,
+             "count1" = count, "TElen1" = TElen, 
+             "eleLen1" = eleLen, "density1" = density) %>%
+      select(!count:density)
+    exPair1 <- H1list[[3]] %>%
+      filter( str_detect(attr, gene1) ) %>%
+      select(scaff, count:density) %>%
+      mutate("gene1" = gene1, "gene2" = gene2,
+             "count1" = count, "TElen1" = TElen, 
+             "eleLen1" = eleLen, "density1" = density) %>%
+      select(!count:density)
+    inPair1 <- H1list[[4]] %>%
+      filter( str_detect(attr, gene1) ) %>%
+      select(scaff, count:density) %>%
+      mutate("gene1" = gene1, "gene2" = gene2,
+             "count1" = count, "TElen1" = TElen, 
+             "eleLen1" = eleLen, "density1" = density) %>%
+      select(!count:density)
+      
+    upPair2 <- H2list[[1]] %>%
+      filter( str_detect(attr, gene2) ) %>%
+      select(scaff, count:density) %>%
+      mutate("gene1" = gene1, "gene2" = gene2,
+             "count2" = count, "TElen2" = TElen, 
+             "eleLen2" = eleLen, "density2" = density) %>%
+      select(!count:density)
+    downPair2 <- H2list[[2]] %>%
+      filter( str_detect(attr, gene2) ) %>%
+      select(scaff, count:density) %>%
+      mutate("geneH1" = gene1, "geneH2" = gene2,
+             "countH2" = count, "TElenH2" = TElen, 
+             "eleLenH2" = eleLen, "densityH2" = density) %>%
+      select(!count:density)
+    exPair2 <- H2list[[3]] %>%
+      filter( str_detect(attr, gene2) ) %>%
+      select(scaff, count:density) %>%
+      mutate("gene1" = gene1, "gene2" = gene2,
+             "count2" = count, "TElen2" = TElen, 
+             "eleLen2" = eleLen, "density2" = density) %>%
+      select(!count:density)
+    inPair2 <- H2list[[4]] %>%
+      filter( str_detect(attr, gene2) ) %>%
+      select(scaff, count:density) %>%
+      mutate("gene1" = gene1, "gene2" = gene2,
+             "count2" = count, "TElen2" = TElen, 
+             "eleLen2" = eleLen, "density2" = density) %>%
+      select(!count:density)
+    
+        
+    upPairs <- full_join(upPair1, upPair2, by = c("scaff", "gene1", "gene2"))
+    downPairs <- full_join(upPair1, upPair2, by = c("scaff", "gene1", "gene2"))
+    exPairs <- full_join(exPair1, exPair2, by = c("scaff", "gene1", "gene2"))
+    inPairs <- full_join(inPair1, inPair2, by = c("scaff", "gene1", "gene2"))
+  } # too many things
+```
+
+
+
+Different approach to summing TE bp in different regions
+
+```{r summingBPforBarplots, include=FALSE, eval=FALSE}
+#%>%
+  group_by(seqOnt, region) %>%
+  summarize(summedbp = sum(bp)) %>%
+  mutate(X = case_when(
+    region == "PAR1"   ~ summedbp/71000000,
+    region == "Old"    ~ summedbp/(261000000-71000000),
+    region == "New"    ~ summedbp/(367000000-261000000),
+    region == "PAR2"   ~ summedbp/(483000000-367000000)
+  ))
+
+
+%>%
+  group_by(seqOnt, region) %>%
+  summarize(summedbp = sum(bp)) %>%
+  mutate(Y1 = case_when(
+    region == "New"   ~ summedbp/64000000,
+    region == "Old"    ~ summedbp/(272000000-64000000),
+    region == "PAR1"    ~ summedbp/(343000000-272000000)
+  ))
+
+
+%>%
+  group_by(seqOnt, region) %>%
+  summarize(summedbp = sum(bp)) %>%
+  mutate(Y2 = case_when(
+    region == "PAR2"   ~ summedbp/121000000,
+    region == "New"    ~ summedbp/(159000000-121000000),
+    region == "Old"    ~ summedbp/(348000000-159000000)
+  ))
+
+
+allSummedTEs <- full_join(XsummedTEs, Y1summedTEs, 
+                          by = join_by(seqOnt, region)) %>%
+  full_join(Y2summedTEs, by = join_by(seqOnt, region)) %>%
+  pivot_longer(cols = c(X, Y1, Y2), 
+               names_to = "Chromosome", values_to = "bp")
+```
+
+
+NC female data
+
+```{r NCfem, eval=FALSE}
+# NC female
+#NCfemList <- importFiles("NCfem")
+#femCounts <- windowAndMerge(NCfemList, NCfemScaffs)
+
+
+
+
+
+#femCounts %>%
+#  ggplot(aes(winnum)) +
+#  geom_line(aes(y = upAvg, colour = "Upstream")) +
+#  geom_line(aes(y = downAvg, colour = "Downstream")) +
+#  geom_line(aes(y = exonAvg, colour = "Exon")) +
+#  geom_line(aes(y = intronAvg, colour = "Intron")) +
+#  pubTheme + theme(legend.position=c(0.87,0.5)) +
+#  labs(x = "NCfem Position (1Mb windows)", 
+#       y = "Average TE Frequency in this Window",
+#       colour = "Location") +
+#  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+
+#femCounts %>%
+#  ggplot(aes(winnum)) +
+#  geom_line(aes(y = upSum, colour = "Upstream")) +
+#  geom_line(aes(y = downSum, colour = "Downstream")) +
+#  geom_line(aes(y = exonSum, colour = "Exon")) +
+#  geom_line(aes(y = intronSum, colour = "Intron")) +
+#  pubTheme + theme(legend.position=c(0.87,0.5)) +
+#  labs(x = "NCfem Position (1Mb windows)", 
+#       y = "Windowed TE count",
+#       colour = "Location") +
+#  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+# limited Y axis
+#femCounts %>%
+#  ggplot(aes(winnum)) +
+#  geom_line(aes(y = upSum, colour = "Upstream")) +
+#  geom_line(aes(y = downSum, colour = "Downstream")) +
+#  geom_line(aes(y = exonSum, colour = "Exon")) +
+#  geom_line(aes(y = intronSum, colour = "Intron")) +
+#  pubTheme + theme(legend.position=c(0.87,0.5)) +
+#  labs(x = "NCfem Position (1Mb windows)", 
+#       y = "Windowed TE count",
+#       colour = "Location") +
+#  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+femCounts %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upSum/upNum, colour = "Upstream")) +
+  geom_line(aes(y = downSum/downNum, colour = "Downstream")) +
+  geom_line(aes(y = exonSum/exonNum, colour = "Exon")) +
+#  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+#  ylim(0, 30) +
+  labs(x = "NCfem Position (1Mb windows)", 
+       y = "Windowed count divided by feature count",
+       colour = "Location") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+femCounts %>%
+  select(c(scaff, winnum, intronNum, intronSum, intronAvg)) %>%
+  ggplot(aes(x = winnum)) +
+  geom_line(aes(y = intronNum, colour = "Introns")) +
+  geom_line(aes(y = intronSum, colour = "TEs in Introns")) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  ylim(0, 500) +
+  labs(x = "NCfem Position (1Mb windows)", y = "Average in Window",
+       colour = "Feature Type") +
+  facet_grid( vars(scaff), scale = "free_x", space = "free" )
+```
+
+
+
