@@ -5,8 +5,26 @@ output: html_notebook
 
 Converting raw anchorwave data into dotplots (similar to stephens excel plots) for publication.
 
-```{r}
-
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+anchors <- read_table("anchors",comment="#")
+# select only autosomes and sex chromosomes
+anchors_clean<- anchors %>% filter(queryChr == "A1" | 
+                                     queryChr== "A2"|
+                                     queryChr== "A4"|
+                                     queryChr=="Y1"|
+                                     queryChr=="Y2")
 ```
-
+### plots!
+```{r}
+ggplot(anchors_clean,aes(referenceStart,queryStart)) + geom_point() + facet_wrap(~queryChr)
+```
+We want the Y to be combined and to make it easier to add PARs and stuff, we will make each plot for each chr separately and use that packaged (zoe mentioned) to combine plots nicely.
+```{r}
+anchors_clean<- anchors %>% filter(queryChr == "A1" | 
+                                     queryChr== "A2"|
+                                     queryChr== "A4"|
+                                     queryChr=="Y1"|
+                                     queryChr=="Y2")
+```
 
