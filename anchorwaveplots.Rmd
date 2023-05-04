@@ -45,7 +45,7 @@ anchors_mut <- anchors_clean %>% mutate(newstart = ifelse(queryChr == "Y1",(quer
 
 ### separate the plots
 
-```{r}
+```{r, fig.width=14, fig.height=10}
 a1<- anchors_mut %>% filter(newChr=="A1") %>% 
       ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
 ## need to transform A2, A4 and Y so that plots are in same orienation
@@ -62,11 +62,20 @@ y<-anchors_mut %>% filter(newChr=="Y") %>%
   geom_vline(xintercept = 71e6,linetype = 'dashed') +
   geom_vline(xintercept = 261e6,linetype = 'dashed') +
   geom_vline(xintercept = 367e6,linetype = 'dashed') +
+  annotate("text", x = .35*(71e6), y = 4e8, label = "PAR1") +
+  annotate("text", x = .5*(71e6+261e6), y = 4e8, label = "Old sex-linked\n region") +
+  annotate("text", x = .5*(261e6+367e6), y = 4e8, label = "New sex-linked\n region") +
+  annotate("text", x = .5*(367e6+500e6), y = 4e8, label = "PAR2") +
   theme_classic() +
-  scale_color_manual(values = pubColours[c(1,4)])
+  theme(legend.position = c(0.9,0.3)) +
+  scale_color_manual(values = pubColours[c(1,4)]) +
+  ylim(0,5e8)
 y
-plot_grid(a1,a2,a4,y)
+ggsave("yonly_draftplot.png")
 
-
-ggsave("draftplot.png")
+plot_grid(a1,a2,a4,y, labels = c("            A1",
+                                 "            A2",
+                                 "            A4",
+                                 "     X/Y1 + Y2"), label_size = 12)
+ggsave("draftplot2.png", width = 14,height = 10)
 ```
