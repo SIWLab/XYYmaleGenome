@@ -46,11 +46,27 @@ anchors_mut <- anchors_clean %>% mutate(newstart = ifelse(queryChr == "Y1",(quer
 ### separate the plots
 
 ```{r}
-a1<- anchors_mut %>% filter(newChr=="A1") %>%  ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
-## need to transform A2, A4 and Y for some reason...
-a2<-anchors_mut %>% filter(newChr=="A2") %>% mutate(newstart=(max(queryStart) - queryStart)) %>% ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
-a4<-anchors_mut %>% filter(newChr=="A4") %>% mutate(newstart=(max(queryStart) - queryStart)) %>%ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
-y<-anchors_mut %>% filter(newChr=="Y") %>%  mutate(newstart=(max(queryStart) - queryStart)) %>% ggplot(aes(referenceStart,newstart)) + geom_point(aes(color=queryChr)) + theme_classic() 
- 
+a1<- anchors_mut %>% filter(newChr=="A1") %>% 
+      ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
+## need to transform A2, A4 and Y so that plots are in same orienation
+a2<-anchors_mut %>% filter(newChr=="A2") %>%
+  mutate(newstart=(max(queryStart) - queryStart)) %>% 
+  ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
+a4<-anchors_mut %>% filter(newChr=="A4") %>%
+  mutate(newstart=(max(queryStart) - queryStart)) %>%
+  ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
+## modify Y plot to contain lines and colors
+y<-anchors_mut %>% filter(newChr=="Y") %>%
+  mutate(newstart=(max(queryStart) - queryStart)) %>% ggplot(aes(referenceStart,newstart)) + 
+  geom_point(aes(color=queryChr)) + 
+  geom_vline(xintercept = 71e6,linetype = 'dashed') +
+  geom_vline(xintercept = 261e6,linetype = 'dashed') +
+  geom_vline(xintercept = 367e6,linetype = 'dashed') +
+  theme_classic() +
+  scale_color_manual(values = pubColours[c(1,4)])
+y
 plot_grid(a1,a2,a4,y)
+
+
+ggsave("draftplot.png")
 ```
