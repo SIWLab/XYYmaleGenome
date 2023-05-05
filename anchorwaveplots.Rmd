@@ -7,6 +7,8 @@ Converting raw anchorwave data into dotplots (similar to stephens excel plots) f
 
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 library(tidyverse)
+library(cowplot)
+
 pubTheme <-theme(title = element_text(size=10), #usually 14
         text = element_text(size=8),
         plot.background = element_rect(fill="lightgrey"),
@@ -35,9 +37,45 @@ ggplot(anchors_clean,aes(referenceStart,queryStart)) + geom_point() + facet_wrap
 We want the Y to be combined and to make it easier to add PARs and stuff, we will make each plot for each chr separately and use that packaged (zoe mentioned) to combine plots nicely.
 ```{r}
 max_Y2<-max(filter(anchors_clean, queryChr == "Y2")$queryEnd)
-anchors_mut <- anchors_clean %>% mutate(newstart = ifelse(queryChr == "Y1",(queryStart+max_Y2), queryStart)) %>% mutate(newChr = ifelse(queryChr == "Y1"| queryChr == "Y2","Y", queryChr)) 
+anchors_mut <- anchors_clean %>% mutate(newstart = ifelse(queryChr == "Y1",(queryStart+max_Y2), queryStart)) %>% mutate(newChr = ifelse(queryChr == "Y1"| queryChr == "Y2","Y", queryChr))
 
-ggplot(anchors_mut,aes(referenceStart,newstart)) + geom_point() + facet_wrap(~newChr)
+#ggplot(anchors_mut,aes(referenceStart,newstart)) + geom_point() + facet_wrap(~newChr)
 
 ```
 
+### separate the plots
+
+```{r, fig.width=14, fig.height=10}
+a1<- anchors_mut %>% filter(newChr=="A1") %>% 
+      ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
+## need to transform A2, A4 and Y so that plots are in same orienation
+a2<-anchors_mut %>% filter(newChr=="A2") %>%
+  mutate(newstart=(max(queryStart) - queryStart)) %>% 
+  ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
+a4<-anchors_mut %>% filter(newChr=="A4") %>%
+  mutate(newstart=(max(queryStart) - queryStart)) %>%
+  ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
+## modify Y plot to contain lines and colors
+y<-anchors_mut %>% filter(newChr=="Y") %>%
+  mutate(newstart=(max(queryStart) - queryStart)) %>% ggplot(aes(referenceStart,newstart)) + 
+  geom_point(aes(color=queryChr)) + 
+  geom_vline(xintercept = 71e6,linetype = 'dashed') +
+  geom_vline(xintercept = 261e6,linetype = 'dashed') +
+  geom_vline(xintercept = 367e6,linetype = 'dashed') +
+  annotate("text", x = .35*(71e6), y = 4e8, label = "PAR1") +
+  annotate("text", x = .5*(71e6+261e6), y = 4e8, label = "Old sex-linked\n region") +
+  annotate("text", x = .5*(261e6+367e6), y = 4e8, label = "New sex-linked\n region") +
+  annotate("text", x = .5*(367e6+500e6), y = 4e8, label = "PAR2") +
+  theme_classic() +
+  theme(legend.position = c(0.9,0.3)) +
+  scale_color_manual(values = pubColours[c(1,4)]) +
+  ylim(0,5e8)
+y
+ggsave("yonly_draftplot.png")
+
+plot_grid(a1,a2,a4,y, labels = c("            A1",
+                                 "            A2",
+                                 "            A4",
+                                 "     X/Y1 + Y2"), label_size = 12)
+ggsave("draftplot2.png", width = 14,height = 10)
+```
