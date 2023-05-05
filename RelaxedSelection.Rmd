@@ -168,7 +168,7 @@ genewise <- function(H1list, H2list, pairList) {
       # There are duplicates because of the ortholog list formatting
       distinct() %>%
       # Rename the location var so the values are meaningful & extract the
-      #gene name from the attribute column
+      #gene name from the attribute column to match with pair list
       mutate(location = case_when(location == 1 ~ "upstream",
                                   location == 2 ~ "downstream",
                                   location == 3 ~ "intron",
@@ -184,7 +184,7 @@ genewise <- function(H1list, H2list, pairList) {
                 TElen = sum(TElen), eleLen = sum(eleLen),
                 frequency = mean(density), .groups = "keep") %>%
       # Find the H2 gene match for H1 orthologs (and don't keep any non-orthologs)
-      inner_join(pairList, by = join_by(H1))
+      inner_join(pairList, by = join_by(H1), multiple = "all")
   } # Make the H1 tibble (documented well)
   {
     H2tibble <- H2list %>%
@@ -203,11 +203,12 @@ genewise <- function(H1list, H2list, pairList) {
       summarize(start = robustMin(start), count = sum(count), 
                 TElen = sum(TElen), eleLen = sum(eleLen),
                 frequency = mean(density), .groups = "keep") %>%
-      inner_join(pairList, by = join_by(H2)) #copy=TRUE doesn't change things
+      inner_join(pairList, by = join_by(H2), multiple = "all")
   } # Make the H2 tibble
   
+  # Join the two tibbles together
   paired <- full_join(H1tibble, H2tibble, by = c("H1", "H2", "location"),
-                      suffix = c("H1", "H2"), copy = TRUE)
+                      suffix = c("H1", "H2"), multiple = "all")
   
   return(paired) 
 }
@@ -389,21 +390,18 @@ Want to look at differences per gene instead of in aggregate!
 There are usually multiple rows for introns/exons per gene - want to summarise
 
 ```{r geneByGene}
-pairedGenesMulti <- genewise(H1list, H2list, pairList)
+pairedGenes <- genewise(H1list, H2list, pairList)
 
-# Summarise the exons/introns per gene
-pairedGenes <- pairedGenesMulti %>% 
-  group_by(H1, H2, location, scaffH1, scaffH2) %>%
-  summarize(startH1 = robustMin(startH1), countH1 = sum(countH1), 
-            TElenH1 = sum(TElenH1), eleLenH1 = sum(eleLenH1),
-            frequencyH1 = mean(densityH1), 
-            startH2 = robustMin(startH2), countH2 = sum(countH2), 
-            TElenH2 = sum(TElenH2), eleLenH2 = sum(eleLenH2),
-            frequencyH2 = mean(densityH2), 
-            .groups = "keep")
-
-paired %>%
-  filter(is.na(countH1))
+# Trying to figure out why NAs appear during the join - the input was supposed to include *only* H1:H2 orthologs...
+# paired %>%
+#   filter(is.na(countH1)) #396 rows
+# paired %>%
+#   filter(is.na(countH2)) #649 rows
+# 
+# H1tibble %>%
+#   filter(is.na(H2)) #0
+# H2tibble %>%
+#   filter(is.na(H1)) #0
 ```
 
 If we just want to look at the genes with orthologs on X or Y1/Y2
@@ -561,7 +559,7 @@ H2counts %>%
 The H1 intron data fits really nicely with my expectations but I find H2 intron data very confusing. I don't know why there are so many fewer introns in the H2 gene annotation...
 
 
-## Bar plots 
+## Bar plots {.tabset}
 
 ### Region Sizes
 
@@ -589,23 +587,105 @@ ggplot(allRegionTEs, aes(x = region, y = Frequency, fill = Chromosome)) +
 
 The number of introns in genes on the X is very high, which *might* help explain why there are so many TEs in them?? Overall, this is just super weird...
 
-## Genewise Comparisons
+## Genewise Comparisons {.tabset}
 
-### Quick stats
+### Quick stats - Count
 
-```{r genewiseQuickStats}
-glimpse(pairedGenes)
+```{r genewiseQuickCountStats}
+#glimpse(pairedGenes)
 
 # Count data
+pairedCount <- pairedGenes %>%
+  group_by(scaffH1, scaffH2, location) %>%
+  select(location:scaffH2, countH1, countH2) %>%
+ summarise(meanH1 = mean(countH1), meanH2 = mean(countH2), n = n(),
+           medianH1 = median(countH1), medianH2 = median(countH2),
+           .groups = "keep") %>%
+ drop_na() # still very concerned about this
+
+#glimpse(pairedCount)
+
+
 pairedGenes %>%
   group_by(scaffH1, scaffH2, location) %>%
   select(location:scaffH2, countH1, countH2) %>%
-  #pivot_longer(cols = scaffH1:scaffH2, names_to = "Haplotype", 
-  #             values_to = "scaff") %>%
-  summarise(meanH1 = mean(countH1), meanH2 = mean(countH2),
-            medianH1 = median(countH1), medianH2 = median(countH2),
-            .groups = "keep") %>%
-  drop_na()
+  pivot_longer(cols = c(countH1, countH2), names_to = "Haplotype", 
+               values_to = "TEcount") %>%
+  mutate(Haplotype = case_when(Haplotype == "countH1" ~ "H1",
+                               Haplotype == "countH2" ~ "H2")) %>%
+  ggplot() +
+  geom_violin(aes(x = scaffH2, y = TEcount, fill = Haplotype)) +
+  #geom_point(aes(x = scaffH2, y = TEcount, colour = Haplotype), alpha = 0.1,
+  #           position = position_dodge2(width = 0.5)) +
+  pubTheme + theme(legend.position = c(0.9, 0.85)) +
+  scale_colour_manual(values = pubColours) +
+  scale_fill_manual(values = pubColours) + 
+  labs(x = "Chromosome", y = "TE count") +
+  facet_wrap(vars(location), scales = "free")
+```
+
+```{r genewisePlotQuickCountStats}
+# Plot Mean 
+ggplot(pairedCount) +
+  geom_point(aes(x = scaffH1, y = meanH1, size = n), colour = pubColours[1],
+             position = position_dodge2(width = 0.3)) +
+  geom_point(aes(x = scaffH2, y = meanH2, size = n), colour = pubColours[2],
+             position = position_dodge2(width = 0.3)) +
+  # Adding text to know where the ortholog is
+  geom_text(aes(x = scaffH1, y = meanH1, label = scaffH2), colour = pubColours[5],
+             position = position_dodge2(width = 0.3), size = 3) +
+  geom_text(aes(x = scaffH2, y = meanH2, label = scaffH1), colour = pubColours[5],
+             position = position_dodge2(width = 0.3), size = 3) +
+  pubTheme + theme(legend.position = "none") +
+  labs(title = "Mean TE count",x = "Scaffold", y = "Mean TE count") +
+  facet_wrap(vars(location), scales = "free")
+
+# Plot median
+ggplot(pairedCount) +
+  geom_point(aes(x = scaffH1, y = medianH1, size = n), colour = pubColours[1],
+             position = position_dodge2(width = 0.3)) +
+  geom_point(aes(x = scaffH2, y = medianH2, size = n), colour = pubColours[2],
+             position = position_dodge2(width = 0.3)) +
+  # Adding text to know where the ortholog is
+  geom_text(aes(x = scaffH1, y = medianH1, label = scaffH2), colour = pubColours[5],
+             position = position_dodge2(width = 0.3), size = 3) +
+  geom_text(aes(x = scaffH2, y = medianH2, label = scaffH1), colour = pubColours[5],
+             position = position_dodge2(width = 0.3), size = 3) +
+  pubTheme + theme(legend.position = "none") +
+  labs(title = "Median TE count",x = "Scaffold", y = "Median TE count") +
+  facet_wrap(vars(location), scales = "free")
+```
+
+### Quick Stats - Frequency
+
+Count feels like a more reasonable metric to do this with, but we're using frequency for everything else.
+
+```{r genewiseQuickFrequencyStats}
+pairedFreq <- pairedGenes %>%
+  group_by(scaffH1, scaffH2, location) %>%
+  select(location:scaffH2, frequencyH1, frequencyH2) %>%
+ summarise(meanH1 = mean(frequencyH1), meanH2 = mean(frequencyH2), n = n(),
+           medianH1 = median(frequencyH1), medianH2 = median(frequencyH2),
+           .groups = "keep") %>%
+ drop_na() # still very concerned about this
+
+
+pairedGenes %>%
+  group_by(scaffH1, scaffH2, location) %>%
+  select(location:scaffH2, frequencyH1, frequencyH2) %>%
+  pivot_longer(cols = c(frequencyH1, frequencyH2), names_to = "Haplotype", 
+               values_to = "frequency") %>%
+  mutate(Haplotype = case_when(Haplotype == "frequencyH1" ~ "H1",
+                               Haplotype == "frequencyH2" ~ "H2")) %>%
+  ggplot() +
+  geom_boxplot(aes(x = scaffH2, y = frequency, fill = Haplotype)) +
+  geom_point(aes(x = scaffH2, y = frequency, colour = Haplotype), 
+             alpha = 0.05, position = "jitter") +
+  pubTheme + #theme(legend.position = c(0.9, 0.85)) +
+  scale_colour_manual(values = pubColours) +
+  scale_fill_manual(values = pubColours) + 
+  labs(x = "Chromosome", y = "TE frequency") +
+  facet_wrap(vars(location), scales = "free")
 ```
 
 
@@ -638,7 +718,7 @@ pairedGenes %>%
   geom_smooth(aes(x = frequencyH1, y = frequencyH2, colour = scaffH1)) +
   geom_abline() +
   pubTheme + scale_colour_manual(values = pubColours) + 
-  annotate(legend.position = "none") +
+  theme(legend.position = "none") +
   labs(title = "Genes with a Y1/Y2 ortholog in Hap2 and autosomal ortholog in Hap1",
        x = "TE frequency for H1 ortholog", y = "TE frequency for H2 ortholog", 
        colour = "H1 Chrom") +
@@ -653,7 +733,7 @@ pairedGenes %>%
   filter(scaffH1 == "X") %>%
   mutate(frequencyRatio = frequencyH2/frequencyH1) %>%
   ungroup() %>%
-  select(scaffH1, scaffH2, frequencyRatio, location) #%>%
+  select(scaffH1, scaffH2, frequencyRatio, location) %>%
   #pivot_longer(cols = c(scaffH1, scaffH2), names_to = "scaff") #%>%
   ggplot() +
   #geom_point(aes(x = location, y = frequencyRatio)) +
