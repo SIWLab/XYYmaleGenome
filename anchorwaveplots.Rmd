@@ -8,6 +8,9 @@ Converting raw anchorwave data into dotplots (similar to stephens excel plots) f
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 library(tidyverse)
 library(cowplot)
+#library(ggpubr)
+library(grid)
+library(gridExtra)
 
 pubTheme <-theme(title = element_text(size=10), #usually 14
         text = element_text(size=8),
@@ -36,46 +39,70 @@ ggplot(anchors_clean,aes(referenceStart,queryStart)) + geom_point() + facet_wrap
 ```
 We want the Y to be combined and to make it easier to add PARs and stuff, we will make each plot for each chr separately and use that packaged (zoe mentioned) to combine plots nicely.
 ```{r}
+max_Y1<-max(filter(anchors_clean, queryChr == "Y1")$queryEnd)
 max_Y2<-max(filter(anchors_clean, queryChr == "Y2")$queryEnd)
-anchors_mut <- anchors_clean %>% mutate(newstart = ifelse(queryChr == "Y1",(queryStart+max_Y2), queryStart)) %>% mutate(newChr = ifelse(queryChr == "Y1"| queryChr == "Y2","Y", queryChr))
 
-#ggplot(anchors_mut,aes(referenceStart,newstart)) + geom_point() + facet_wrap(~newChr)
+# anchors_mut <- anchors_clean %>% mutate(newstart = ifelse(queryChr == "Y2",(queryStart+max_Y1), queryStart)) %>% mutate(newChr = ifelse(queryChr == "Y1"| queryChr == "Y2","Y", queryChr)) #%>% mutate(.,queryMb = newstart/1e6) %>% mutate(.,referenceMb = referenceStart/1e6)
+
+anchors_mut <- anchors_clean %>% #mutate(newstart = ifelse(queryChr == "Y1",(queryStart+max_Y2), queryStart)) 
+  mutate(newChr = ifelse(queryChr == "Y1"| queryChr == "Y2","Y", queryChr))
+
+anchors_mb<- anchors_mut %>% mutate(queryMb = queryStart/1e6) %>% mutate(referenceMb = referenceStart/1e6)
+
 
 ```
 
 ### separate the plots
 
 ```{r, fig.width=14, fig.height=10}
-a1<- anchors_mut %>% filter(newChr=="A1") %>% 
-      ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
+a1<- anchors_mb %>% filter(newChr=="A1") %>% 
+    mutate(newstartMb=queryMb) %>%
+    ggplot(aes(referenceMb,newstartMb)) + geom_point() + theme_classic()
 ## need to transform A2, A4 and Y so that plots are in same orienation
-a2<-anchors_mut %>% filter(newChr=="A2") %>%
-  mutate(newstart=(max(queryStart) - queryStart)) %>% 
-  ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
-a4<-anchors_mut %>% filter(newChr=="A4") %>%
-  mutate(newstart=(max(queryStart) - queryStart)) %>%
-  ggplot(aes(referenceStart,newstart)) + geom_point() + theme_classic()
+
+a2<-anchors_mb %>% filter(newChr=="A2") %>%
+  mutate(newstartMb=(max(queryMb) - queryMb)) %>%
+  ggplot(aes(referenceMb,newstartMb)) + geom_point() + theme_classic()
+
+a4<-anchors_mb %>% filter(newChr=="A4") %>%
+  mutate(newstartMb=(max(queryMb) - queryMb)) %>%
+  ggplot(aes(referenceMb,newstartMb)) + geom_point() + theme_classic()
+
 ## modify Y plot to contain lines and colors
-y<-anchors_mut %>% filter(newChr=="Y") %>%
-  mutate(newstart=(max(queryStart) - queryStart)) %>% ggplot(aes(referenceStart,newstart)) + 
+y<-anchors_mb %>% filter(newChr=="Y") %>%
+  mutate(newstartMb=(max(queryMb) - queryMb)) %>%
+  ggplot(aes(referenceMb,newstartMb)) + 
   geom_point(aes(color=queryChr)) + 
-  geom_vline(xintercept = 71e6,linetype = 'dashed') +
-  geom_vline(xintercept = 261e6,linetype = 'dashed') +
-  geom_vline(xintercept = 367e6,linetype = 'dashed') +
-  annotate("text", x = .35*(71e6), y = 4e8, label = "PAR1") +
-  annotate("text", x = .5*(71e6+261e6), y = 4e8, label = "Old sex-linked\n region") +
-  annotate("text", x = .5*(261e6+367e6), y = 4e8, label = "New sex-linked\n region") +
-  annotate("text", x = .5*(367e6+500e6), y = 4e8, label = "PAR2") +
+  geom_vline(xintercept = 71,linetype = 'dashed') +
+  geom_vline(xintercept = 261,linetype = 'dashed') +
+  geom_vline(xintercept = 367,linetype = 'dashed') +
+  annotate("text", x = .35*(71), y = 400, label = "PAR1") +
+  annotate("text", x = .5*(71+261), y = 400, label = "Old sex-linked\n region") +
+  annotate("text", x = .5*(261+367), y = 400, label = "New sex-linked\n region") +
+  annotate("text", x = .5*(367+500), y = 400, label = "PAR2") +
+  ylim(0,430) +
   theme_classic() +
   theme(legend.position = c(0.9,0.3)) +
-  scale_color_manual(values = pubColours[c(1,4)]) +
-  ylim(0,5e8)
+  scale_color_manual(name="Y chromosome",
+                    labels=c("old Y","neo Y"),
+                     values = pubColours[c(1,4)])
 y
-ggsave("yonly_draftplot.png")
+myplot<-plot_grid(a1,a2,a4,y, labels = c(" A1",
+                                 " A2",
+                                 " A4",
+                                 "X/Y1+Y2"), 
+          label_x=0.07,label_size=12,hjust=-0.3)
+#create common x and y labels
 
-plot_grid(a1,a2,a4,y, labels = c("            A1",
-                                 "            A2",
-                                 "            A4",
-                                 "     X/Y1 + Y2"), label_size = 12)
-ggsave("draftplot2.png", width = 14,height = 10)
+y.grob <- textGrob("Maternal Haplotype",gp=gpar(fontface="bold", fontsize=14), rot=90)
+
+x.grob <- textGrob("Paternal Haplotype",gp=gpar(fontface="bold", fontsize=14))
+
+#add to plot
+
+grid.arrange(arrangeGrob(myplot, left = y.grob, bottom = x.grob))
+=#ggsave("draftplot2.png", width = 14,height = 10)
 ```
+
+
+
