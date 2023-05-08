@@ -37,7 +37,7 @@ anchors_clean<- anchors %>% filter(queryChr == "A1" |
 ```{r}
 ggplot(anchors_clean,aes(referenceStart,queryStart)) + geom_point() + facet_wrap(~queryChr)
 ```
-We want the Y to be combined and to make it easier to add PARs and stuff, we will make each plot for each chr separately and use that packaged (zoe mentioned) to combine plots nicely.
+We want the Y to be combined and to make it easier to add PARs and stuff, we will make each plot for each chr separately.
 ```{r}
 max_Y1<-max(filter(anchors_clean, queryChr == "Y1")$queryEnd)
 max_Y2<-max(filter(anchors_clean, queryChr == "Y2")$queryEnd)
@@ -57,16 +57,19 @@ anchors_mb<- anchors_mut %>% mutate(queryMb = queryStart/1e6) %>% mutate(referen
 ```{r, fig.width=14, fig.height=10}
 a1<- anchors_mb %>% filter(newChr=="A1") %>% 
     mutate(newstartMb=queryMb) %>%
-    ggplot(aes(referenceMb,newstartMb)) + geom_point() + theme_classic()
-## need to transform A2, A4 and Y so that plots are in same orienation
+    ggplot(aes(referenceMb,newstartMb)) + geom_point() + theme_classic()+
+    theme(axis.title=element_blank())
+## need to transform A2, A4 and Y so that plots are in same orientation
 
 a2<-anchors_mb %>% filter(newChr=="A2") %>%
   mutate(newstartMb=(max(queryMb) - queryMb)) %>%
   ggplot(aes(referenceMb,newstartMb)) + geom_point() + theme_classic()
+  theme(axis.title=element_blank())
 
 a4<-anchors_mb %>% filter(newChr=="A4") %>%
   mutate(newstartMb=(max(queryMb) - queryMb)) %>%
-  ggplot(aes(referenceMb,newstartMb)) + geom_point() + theme_classic()
+  ggplot(aes(referenceMb,newstartMb)) + geom_point() + theme_classic() +
+  theme(axis.title=element_blank())
 
 ## modify Y plot to contain lines and colors
 y<-anchors_mb %>% filter(newChr=="Y") %>%
@@ -82,10 +85,11 @@ y<-anchors_mb %>% filter(newChr=="Y") %>%
   annotate("text", x = .5*(367+500), y = 400, label = "PAR2") +
   ylim(0,430) +
   theme_classic() +
-  theme(legend.position = c(0.9,0.3)) +
-  scale_color_manual(name="Y chromosome",
+  theme(legend.position = c(0.9,0.3),axis.title=element_blank()) +
+  scale_color_manual(name="",
                     labels=c("old Y","neo Y"),
                      values = pubColours[c(1,4)])
+  
 y
 myplot<-plot_grid(a1,a2,a4,y, labels = c(" A1",
                                  " A2",
@@ -94,14 +98,14 @@ myplot<-plot_grid(a1,a2,a4,y, labels = c(" A1",
           label_x=0.07,label_size=12,hjust=-0.3)
 #create common x and y labels
 
-y.grob <- textGrob("Maternal Haplotype",gp=gpar(fontface="bold", fontsize=14), rot=90)
+y.grob <- textGrob("Maternal Haplotype\nposition(Mb)",gp=gpar(fontface="bold", fontsize=12), rot=90)
 
-x.grob <- textGrob("Paternal Haplotype",gp=gpar(fontface="bold", fontsize=14))
+x.grob <- textGrob("Paternal Haplotype\nposition(Mb)",gp=gpar(fontface="bold", fontsize=12))
 
 #add to plot
-
-grid.arrange(arrangeGrob(myplot, left = y.grob, bottom = x.grob))
-=#ggsave("draftplot2.png", width = 14,height = 10)
+labeledplot<-grid.arrange(arrangeGrob(myplot, left = y.grob, bottom = x.grob))
+# save as tiff (raster, lossless, good for publication apparently?)
+ggsave(plot=labeledplot,"draft3_dotplot.tiff",width=14,height=10,dpi="print",device="tiff")
 ```
 
 
