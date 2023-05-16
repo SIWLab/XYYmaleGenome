@@ -153,7 +153,7 @@ windowAndMerge <- function(dfList, scaffList) {
 }  
 ```
 
-Merge the H1 and H2 data by gene orthology
+Merge the H1 and H2 data by gene orthology. There are usually multiple rows for introns/exons per gene - want to use the average TE density in introns/exons for a given gene.
 
 ```{r genewiseMergeFunction}
 robustMin <- function(x) {if (length(x)>0) min(x) else NA}
@@ -386,8 +386,6 @@ allRegionSizes <- full_join(XregionSizes, Y1regionSizes,
 ## Per-Gene Comparisons
 
 Want to look at differences per gene instead of in aggregate!
-
-There are usually multiple rows for introns/exons per gene - want to summarise
 
 ```{r geneByGene, warning=FALSE}
 pairedGenes <- genewise(H1list, H2list, pairList)
@@ -666,9 +664,9 @@ Count feels like a more reasonable metric to do this with, but we're using frequ
 ```{r genewiseQuickFrequencyStats}
 pairedFreq <- pairedGenes %>%
   group_by(scaffH1, scaffH2, location) %>%
-  select(location:scaffH2, densityH1, densityH2) %>%
-  summarise(meanH1 = mean(densityH1), meanH2 = mean(densityH2), n = n(),
-            medianH1 = median(densityH1), medianH2 = median(densityH2),
+  select(location:scaffH2, frequencyH1, frequencyH2) %>%
+  summarise(meanH1 = mean(frequencyH1), meanH2 = mean(frequencyH2), n = n(),
+            medianH1 = median(frequencyH1), medianH2 = median(frequencyH2),
             .groups = "keep") %>%
   drop_na() # still very concerned about this
 
@@ -676,9 +674,9 @@ glimpse(pairedFreq)
 
 pairedGenes %>%
   group_by(scaffH1, scaffH2, location) %>%
-  select(location:scaffH2, densityH1, densityH2) %>%
+  select(location:scaffH2, frequencyH1, frequencyH2) %>%
   drop_na() %>%
-  pivot_longer(cols = c(densityH1, densityH2), names_to = "Haplotype", 
+  pivot_longer(cols = c(frequencyH1, frequencyH2), names_to = "Haplotype", 
                values_to = "frequency") %>%
   mutate(Haplotype = case_when(Haplotype == "densityH1" ~ "H1",
                                Haplotype == "densityH2" ~ "H2")) %>%
@@ -706,7 +704,7 @@ ggplot(pairedFreq) +
              position = position_dodge2(width = 0.3), size = 3) +
   geom_text(aes(x = scaffH2, y = meanH2, label = scaffH1), colour = pubColours[5],
              position = position_dodge2(width = 0.3), size = 3) +
-  pubTheme + theme(legend.position = "none") +
+  pubTheme + #theme(legend.position = "none") +
   labs(x = "Scaffold", y = "Mean TE frequency") +
   facet_wrap(vars(location), scales = "free")
 
@@ -721,7 +719,7 @@ ggplot(pairedFreq) +
              position = position_dodge2(width = 0.3), size = 3) +
   geom_text(aes(x = scaffH2, y = medianH2, label = scaffH1), colour = pubColours[5],
              position = position_dodge2(width = 0.3), size = 3) +
-  pubTheme + theme(legend.position = "none") +
+  pubTheme + #theme(legend.position = "none") +
   labs(x = "Scaffold", y = "Median TE frequency") +
   facet_wrap(vars(location), scales = "free")
 ```
@@ -785,6 +783,28 @@ pairedGenes %>%
   facet_wrap(vars(location), nrow = 2)
 ```
 
+
+
+### Chromosomal Landscape
+
+```{r genewiseLandscape}
+pairedTest <- pairedGenes %>%
+  mutate(winnum = startH1%/%as.numeric(winSize)) %>%
+  group_by(location, scaffH1, scaffH2, winnum) %>%
+  summarise(freqH1 = mean(frequencyH1), 
+            freqH2 = mean(frequencyH2), .groups = "keep") %>% 
+  drop_na(freqH1)
+
+pairedTest %>%
+  filter(location == "downstream") %>%
+  ggplot() +
+  geom_point(aes(x = winnum, y = freqH1), colour = pubColours[1], alpha = 0.5) +
+  geom_point(aes(x = winnum, y = freqH2), colour = pubColours[2], alpha = 0.3) +
+  scale_colour_manual(values = pubColours) +
+  pubTheme + theme(legend.position = c(0.85, 0.5)) +
+  labs(x = "Position (1Mb windows)", y = "TE frequency") +
+  facet_grid(vars(scaffH1), scales = "free")
+```
 
 
 # Unused
