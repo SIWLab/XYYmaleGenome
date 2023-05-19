@@ -214,6 +214,10 @@ genewise <- function(H1list, H2list, pairList) {
 }
 ```
 
+```{r functionFor}
+
+```
+
 
 ## Import
 
@@ -787,24 +791,78 @@ pairedGenes %>%
 
 ### Chromosomal Landscape
 
-```{r genewiseLandscape}
+```{r filterCompressForPlotting}
 pairedTest <- pairedGenes %>%
-  mutate(winnum = startH1%/%as.numeric(winSize)) %>%
-  group_by(location, scaffH1, scaffH2, winnum) %>%
-  summarise(freqH1 = mean(frequencyH1), 
-            freqH2 = mean(frequencyH2), .groups = "keep") %>% 
+  filter(scaffH1 == scaffH2 | 
+           scaffH1 == "X" | scaffH2 == "Y1" | scaffH2 == "Y2") %>%
+  mutate(winnum = startH1 %/% as.numeric(winsize)) %>%
+  group_by(location, scaffH1, winnum) %>%
+  summarise(freqH1 = mean(frequencyH1), freqH2 = mean(frequencyH2),
+            .groups = "keep") %>% 
   drop_na(freqH1)
+```
+
+
+Green is H2 and blue is H1
+
+```{r genewiseLandscapeH1H2}
+pairedTest %>%
+  filter(location == "upstream") %>%
+  ggplot() +
+  geom_line(aes(x = winnum, y = freqH2), colour = pubColours[2]) +
+  geom_line(aes(x = winnum, y = freqH1), colour = pubColours[1]) +
+  scale_colour_manual(values = pubColours) +
+  pubTheme + theme(legend.position = c(0.85, 0.5)) +
+  labs(x = "Position (1Mb windows)", y = "Upstream TE frequency") +
+  facet_grid(vars(scaffH1), scales = "free")
 
 pairedTest %>%
   filter(location == "downstream") %>%
   ggplot() +
-  geom_point(aes(x = winnum, y = freqH1), colour = pubColours[1], alpha = 0.5) +
-  geom_point(aes(x = winnum, y = freqH2), colour = pubColours[2], alpha = 0.3) +
+  geom_line(aes(x = winnum, y = freqH2), colour = pubColours[2]) +
+  geom_line(aes(x = winnum, y = freqH1), colour = pubColours[1]) +
   scale_colour_manual(values = pubColours) +
   pubTheme + theme(legend.position = c(0.85, 0.5)) +
-  labs(x = "Position (1Mb windows)", y = "TE frequency") +
+  labs(x = "Position (1Mb windows)", y = "Downstream TE frequency") +
+  facet_grid(vars(scaffH1), scales = "free")
+
+pairedTest %>%
+  filter(location == "exon") %>%
+  ggplot() +
+  geom_line(aes(x = winnum, y = freqH2), colour = pubColours[2]) +
+  geom_line(aes(x = winnum, y = freqH1), colour = pubColours[1]) +
+  scale_colour_manual(values = pubColours) +
+  pubTheme + theme(legend.position = c(0.85, 0.5)) +
+  labs(x = "Position (1Mb windows)", y = "Exon TE frequency") +
+  facet_grid(vars(scaffH1), scales = "free")
+
+pairedTest %>%
+  filter(location == "intron") %>%
+  ggplot() +
+  geom_line(aes(x = winnum, y = freqH2), colour = pubColours[2]) +
+  geom_line(aes(x = winnum, y = freqH1), colour = pubColours[1]) +
+  scale_colour_manual(values = pubColours) +
+  pubTheme + theme(legend.position = c(0.85, 0.5)) +
+  labs(x = "Position (1Mb windows)", y = "Intron TE frequency") +
   facet_grid(vars(scaffH1), scales = "free")
 ```
+
+```{r}
+ggplot(pairedTest) +
+  geom_line(aes(x = winnum, y = freqH1, colour = location)) +
+  scale_colour_manual(values = pubColours) +
+  pubTheme + theme(legend.position = c(0.85, 0.5)) +
+  labs(x = "Position (1Mb windows)", y = "H1 TE frequency") +
+  facet_grid(vars(scaffH1), scales = "free")
+
+ggplot(pairedTest) +
+  geom_line(aes(x = winnum, y = freqH2, colour = location)) +
+  scale_colour_manual(values = pubColours) +
+  pubTheme + theme(legend.position = c(0.85, 0.5)) +
+  labs(x = "Position (1Mb windows)", y = "H2 TE frequency") +
+  facet_grid(vars(scaffH1), scales = "free")
+```
+
 
 
 # Unused
