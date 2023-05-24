@@ -782,15 +782,44 @@ H2TEs %>%
   group_by(family, seqOnt) %>%
   summarise(size = sum(end - start) / 1000000, 
             n = n(), .groups = "keep") %>%
-  filter(seqOnt != "low_complexity") %>%
   arrange(desc(size)) %>%
   head(50) %>%
   ggplot(aes(x = reorder(family, -size), y = size)) +
   geom_col(aes(fill = seqOnt)) + 
-  geom_text(aes(label = n), size = 3,  angle = 85) +
+  geom_text(aes(label = n, y = size + 4), size = 3, angle = 85) +
   pubTheme + theme(legend.position = c(0.8, 0.6)) +
   labs(x = "50 largest TE families in H2", 
        y = "Size (1Mb)", fill = "TE Type")
+
+
+
+
+# Count
+H1TEs %>%
+  group_by(family, seqOnt) %>%
+  summarise(size = sum(end - start) / 1000000, 
+            n = n(), .groups = "keep") %>%
+  arrange(desc(n)) %>%
+  head(50) %>%
+  ggplot(aes(x = reorder(family, -n), y = n)) +
+  geom_col(aes(fill = seqOnt)) + 
+  geom_text(aes(label = size, y = n + 4), size = 3, angle = 85) +
+  pubTheme + theme(legend.position = c(0.8, 0.6)) +
+  labs(x = "50 largest TE families in H1", 
+       y = "Copy number", fill = "TE Type")
+
+H2TEs %>%
+  group_by(family, seqOnt) %>%
+  summarise(size = sum(end - start) / 1000000, 
+            n = n(), .groups = "keep") %>%
+  arrange(desc(n)) %>%
+  head(50) %>%
+  ggplot(aes(x = reorder(family, -n), y = n)) +
+  geom_col(aes(fill = seqOnt)) + 
+  geom_text(aes(label = size, y = n + 4), size = 3, angle = 85) +
+  pubTheme + theme(legend.position = c(0.8, 0.6)) +
+  labs(x = "50 largest TE families in H2", 
+       y = "Copy number", fill = "TE Type")
 ```
 
 Some big families!! Not drastically larger than with the old data set, but a bit!
@@ -802,7 +831,7 @@ Bar plots of the largest families
 ```{r barplotBiggestFams}
 # # Using haplotype as a factor (which is probably cleaner?)
 famFacTally %>%
-  ggplot(aes(x = reorder(family, -bp), y = bp / 1000000)) +
+  ggplot(aes(x = reorder(family, -total), y = total / 1000000)) +
   geom_col(aes(fill = haplotype, colour = seqOnt)) +
   scale_fill_manual(values = c("black", "darkgrey")) +
   #geom_text(aes(y = bp / 1000000 + 8, label = n), size = 3,  angle = 85) +
@@ -942,6 +971,93 @@ rm(h1biggies, h2biggies)
 ```
 
 The plot shows there has been extreme proliferation of TEs on Y1 and fairly significant accumulation on Y2 as well. 
+
+### Biggest by superfamily
+
+Identify the five biggest families (by copy number) in the most abundant superfamilies: RLC, DTM, RLX, DTH, and RLG
+
+```{r superFamBiggies}
+bigSuperFams <- famTally %>%
+  filter(seqOnt == "RLC" | seqOnt == "DTM" | seqOnt == "RLX" |
+         seqOnt == "DTH" | seqOnt == "RLG") %>%
+  group_by(seqOnt) %>%
+  slice_max(order_by = n, n = 5) %>%
+  pull(family)
+
+h1biggies <- H1TEs %>%
+  filter(scaff == "X" | scaff == "A1") %>%
+  filter(family %in% bigSuperFams) #%>%
+
+h2biggies <- H2TEs %>%
+  filter(scaff == "Y1" | scaff == "Y2") %>%
+  filter(family %in% bigSuperFams)
+
+
+
+# Starting to plot the families
+
+h1biggies %>%
+  bind_rows(h2biggies) %>%
+  filter(seqOnt == "RLC") %>%
+  ggplot(aes(start, fill = seqOnt)) +
+  geom_histogram(binwidth = 1000000) +
+  pubTheme + theme(legend.position = c(0.87,0.3)) +
+  scale_fill_manual(values = pubColours[1]) +
+  labs(x = "Start position (1Mb bins)", 
+       y = "Number of TEs that belong to the 5 biggest families",
+       fill = "TE Type") +
+  facet_grid(vars(scaff))#, scales = "free")#, strip.position = "bottom")
+
+h1biggies %>%
+  bind_rows(h2biggies) %>%
+  filter(seqOnt == "RLG") %>%
+  ggplot(aes(start, fill = seqOnt)) +
+  geom_histogram(binwidth = 1000000) +
+  pubTheme + theme(legend.position = c(0.87,0.3)) +
+  scale_fill_manual(values = pubColours[2]) +
+  labs(x = "Start position (1Mb bins)", 
+       y = "Number of TEs that belong to the 5 biggest families",
+       fill = "TE Type") +
+  facet_grid(vars(scaff))
+
+h1biggies %>%
+  bind_rows(h2biggies) %>%
+  filter(seqOnt == "RLX") %>%
+  ggplot(aes(start, fill = seqOnt)) +
+  geom_histogram(binwidth = 1000000) +
+  pubTheme + theme(legend.position = c(0.87,0.3)) +
+  scale_fill_manual(values = pubColours[3]) +
+  labs(x = "Start position (1Mb bins)", 
+       y = "Number of TEs that belong to the 5 biggest families",
+       fill = "TE Type") +
+  facet_grid(vars(scaff))
+
+h1biggies %>%
+  bind_rows(h2biggies) %>%
+  filter(seqOnt == "DTM") %>%
+  ggplot(aes(start, fill = seqOnt)) +
+  geom_histogram(binwidth = 1000000) +
+  pubTheme + theme(legend.position = c(0.87,0.3)) +
+  scale_fill_manual(values = pubColours[4]) +
+  labs(x = "Start position (1Mb bins)", 
+       y = "Number of TEs that belong to the 5 biggest families",
+       fill = "TE Type") +
+  facet_grid(vars(scaff))
+
+h1biggies %>%
+  bind_rows(h2biggies) %>%
+  filter(seqOnt == "DTH") %>%
+  ggplot(aes(start, fill = seqOnt)) +
+  geom_histogram(binwidth = 1000000) +
+  pubTheme + theme(legend.position = c(0.87,0.3)) +
+  scale_fill_manual(values = pubColours[5]) +
+  labs(x = "Start position (1Mb bins)", 
+       y = "Number of TEs that belong to the 5 biggest families",
+       fill = "TE Type") +
+  facet_grid(vars(scaff))
+
+rm(h1biggies, h2biggies, bigSuperFams)
+```
 
 
 # Statistics
