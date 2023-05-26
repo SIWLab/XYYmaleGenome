@@ -89,7 +89,7 @@ sexRegionEnds <- tibble(
 )
 ```
 
-Fucntion to import the files with upstream, downstream, exon, and intron TE information into one list of tibbles.
+Function to import the files with upstream, downstream, exon, and intron TE information into one list of tibbles.
 
 ```{r importFunction}
 #Make a list of dataframes for each region
@@ -262,11 +262,11 @@ Actually importing the data & summarizing it. What results is a list of tibbles 
 
 ```{r import, message=FALSE}
 # NC male Haplotype 1 
-H1list <- importFiles("onetooneH1") #list of tibbles with flank info
+H1list <- importFiles("Hap2litofftohap1") #list of tibbles with flank info
 H1counts <- windowAndMerge(H1list, H1scaffs) #window the flank information
 
 # NC male Haplotype 2
-H2list <- importFiles("onetooneH2")
+H2list <- importFiles("Hap1litofftohap2")
 H2counts <- windowAndMerge(H2list, H2scaffs)
 
 # Gene pairing information
@@ -567,7 +567,7 @@ H2counts %>%
   ggplot(aes(x = winnum)) +
   geom_line(aes(y = intronNum, colour = "Introns")) +
   geom_line(aes(y = intronSum, colour = "TEs in Introns")) +
-  pubTheme + theme(legend.position=c(0.87,0.5)) +
+  pubTheme + theme(legend.position=c(0.87,0.5)) + ylim(0,500) +
   labs(x = "H2 Position (1Mb windows)", y = "Summed count in Window",
        colour = "Feature Type") +
   facet_grid( vars(scaff), scale = "free_x", space = "free" )
