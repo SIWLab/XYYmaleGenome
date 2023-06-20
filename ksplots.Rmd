@@ -1,0 +1,48 @@
+---
+title: "Ks plots for genome paper"
+output: html_notebook
+---
+### setup
+```{r}
+library(renv)
+library(tidyverse)
+#renv::init()
+#renv::snapshot()
+```
+
+## loading in files
+```{r}
+ksheader<-read.table("65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20_g10_A5.aligncoords.gcoords.ks.txt",comment.char ="",skip = 2,nrows = 1) %>% select(-V13) %>% rename()
+print(ksheader)
+```
+Tweak header names and add to main file.
+```{r}
+ksheader$V1<-"Ks"
+ksheader$V3<-"a_dbgenomeid_chr"
+ksheader$V7<-"b_dbgenomeid_chr"
+as.list(ksheader)
+ksfile<-read.table("65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20_g10_A5.aligncoords.gcoords.ks.txt", comment.char = "#",header =FALSE)
+colnames(ksfile)<- as.character(ksheader)
+```
+### file parsing
+Change | separated entries into sep columns
+```{r}
+colnames(ksfile)
+ksfile_split<-ksfile %>% 
+      separate_wider_delim(
+        cols=c("chr1||start1||stop1||name1||strand1||type1||db_feature_id1||genome_order1||percent_id1"),
+          delim = "||", 
+            names = c("chr1","start1_og","stop1_og","name1",
+                        "strand1","type1","db_feature_id1","genome_order1","percent_id1")) %>%
+      separate_wider_delim(
+        cols=c("chr2||start2||stop2||name2||strand2||type2||db_feature_id2||genome_order2||percent_id2"),
+          delim = "||", 
+            names = c("chr2","start2_og","stop2_og","name2",
+                        "strand2","type2","db_feature_id2","genome_order2","percent_id2"))
+  
+head(ksfile_split)
+## og start and stop are opposite of the other positions bc on minus strand
+```
+
+
+
