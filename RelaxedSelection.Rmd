@@ -18,6 +18,7 @@ knitr::opts_knit$set(root.dir = "~/2022NewRefs")
 
 # Import libraries
 library("tidyverse") #so much love
+library("patchwork") #for arranging plots into figures
 
 # Colouring & themes
 pubTheme <-
@@ -266,7 +267,7 @@ H1list <- importFiles("Hap2litofftohap1") #list of tibbles with flank info
 H1counts <- windowAndMerge(H1list, H1scaffs) #window the flank information
 
 # NC male Haplotype 2
-H2list <- importFiles("Hap1litofftohap2")
+H2list <- importFiles("H2")
 H2counts <- windowAndMerge(H2list, H2scaffs)
 
 # Gene pairing information
@@ -524,7 +525,7 @@ H1counts %>%
   geom_line(aes(y = upSum/upNum, colour = "Upstream")) +
   geom_line(aes(y = downSum/downNum, colour = "Downstream")) +
   geom_line(aes(y = exonSum/exonNum, colour = "Exon")) +
-#  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
+  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
   pubTheme + theme(legend.position=c(0.87,0.5)) +
   labs(x = "H1 Position (1Mb windows)", 
        y = "Windowed count divided by feature count",
@@ -536,12 +537,33 @@ H2counts %>%
   geom_line(aes(y = upSum/upNum, colour = "Upstream")) +
   geom_line(aes(y = downSum/downNum, colour = "Downstream")) +
   geom_line(aes(y = exonSum/exonNum, colour = "Exon")) +
-#  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
+  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
   pubTheme + theme(legend.position=c(0.87,0.5)) +
   labs(x = "H2 Position (1Mb windows)", 
        y = "Windowed count divided by feature count",
        colour = "Location") +
   facet_grid( vars(scaff), scale = "free_x", space = "free" )
+
+
+
+countOverFeatureCount <- H1counts %>%
+  filter(scaff == "X") %>%
+  ggplot(aes(winnum)) +
+  geom_line(aes(y = upSum/upNum, colour = "Upstream")) +
+  geom_line(aes(y = downSum/downNum, colour = "Downstream")) +
+  geom_line(aes(y = exonSum/exonNum, colour = "Exon")) +
+  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
+  geom_line(data = H2counts, aes(y = upSum/upNum, colour = "Upstream")) +
+  geom_line(data = H2counts, aes(y = downSum/downNum, colour = "Downstream")) +
+  geom_line(data = H2counts, aes(y = exonSum/exonNum, colour = "Exon")) +
+  geom_line(data = H2counts, aes(y = intronSum/intronNum, colour = "Intron")) +
+  pubTheme + #theme(legend.direction = "horizontal", legend.position = "top") +
+  labs(x = "Position (1Mb windows)", 
+       y = "Windowed count divided by feature count",
+       colour = "Location") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+
+countOverFeatureCount
 ```
 
 With the unfiltered data set, there were an average of 2 TEs within 1kb of genes. With the filtered set, it looks about the same but with variation closer to what I'd expect (low levels in the regions of high gene density).
@@ -604,12 +626,14 @@ H2counts %>%
 ### Region Sizes
 
 ```{r barplotSexChromSizes, warning=FALSE}
-ggplot(allRegionSizes, aes(x = region, y = Size, fill = Chromosome)) +
+regionSizes <- ggplot(allRegionSizes, aes(x = region, y = Size, fill = Chromosome)) +
   geom_col(position = position_dodge()) +
   pubTheme + scale_fill_manual(values = pubColours) +
   labs(x = "Region", y = "Number of bp in this region", 
        fill = "Chromosome") +
   facet_grid(vars(location), space = "free")
+
+regionSizes
 ```
 
 X chromosome introns seem to be much more frequent/larger for these 1:1 orthologs. 
@@ -617,12 +641,15 @@ X chromosome introns seem to be much more frequent/larger for these 1:1 ortholog
 ### Divisions within sex chromosomes
 
 ```{r barplotsSexChroms, warning=FALSE}
-ggplot(allRegionTEs, aes(x = region, y = Frequency, fill = Chromosome)) +
+regionFrequency <- allRegionTEs %>%
+  ggplot(aes(x = region, y = Frequency, fill = Chromosome)) +
   geom_col(position = position_dodge()) +
   pubTheme + scale_fill_manual(values = pubColours) +
   labs(x = "Region", y = "Frequency of TEs", 
        fill = "Chromosome") +
   facet_grid(vars(location), space = "free")
+
+regionFrequency
 ```
 
 The number of introns in genes on the X is very high, which *might* help explain why there are so many TEs in them?? Overall, this is just super weird...
@@ -905,6 +932,27 @@ ggplot(pairedTest) +
   labs(x = "Position (1Mb windows)", y = "H2 TE frequency", 
        colour = "Location") +
   facet_grid(vars(scaffH1), scales = "free")
+```
+
+
+
+
+# Figure 4
+
+```{r fig4}
+fig4 <- 
+  countOverFeatureCount / (regionFrequency | regionSizes) +
+  plot_layout(heights = c(2, 1)) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+  title = "Figure 4",
+  tag_levels = "A", 
+  caption = "(A) The fractio (B) Fraction of the region occupied by Genes.  (C) Fraction of the region occupied by TEs.")
+
+fig4 #quick preview to double-check
+
+# Save the plot as figure3.png "with sensible defaults"
+ggsave("figure4.png", plot = fig4, width = 9, height = 7)
 ```
 
 

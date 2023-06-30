@@ -20,6 +20,7 @@ knitr::opts_knit$set(root.dir = "~/2022NewRefs")
 
 # Import libraries
 library("tidyverse") #so much love
+library("patchwork") #for arranging plots into figures
 #library("rtracklayer") #just for readGFF?
 
 # Colouring & themes
@@ -211,6 +212,20 @@ splitY2 <- function(df) {
 }
 ```
 
+```{r filterLiftedGenesFunction}
+checkLifted <- function(original, lifted, oscaffs, lscaffs) {
+  keepers <- lifted %>% 
+    filter(scaff %in% lscaffs, seqOnt == "gene") %>%
+    mutate(ID = str_match(attr, "ID=([^;]+)")[,2]) %>%
+    pull(ID)
+  
+  original %>%
+    filter(scaff %in% oscaffs) %>%
+    #select(!c(seqOnt, score, strand, phase)) %>%
+    filterGenes %>%
+    filter(str_detect(attr, str_c(keepers, collapse = "|")))
+}
+```
 
 ```{r makerOnly, include=FALSE}
 filterMAKER <- function(df) {
@@ -237,7 +252,7 @@ window <- function(df) {
 summarizeGenes <- function(df) {
   df %>%
     group_by(scaff, winnum) %>%
-    summarise( bp = sum(length), n = n() ) %>%
+    summarise( bp = sum(length), n = n(), .groups = "keep" ) %>%
     mutate(amt = bp/winsize)
 }
 
@@ -319,7 +334,7 @@ H2TEs %>%
   head(50) 
 ```
 
-### Make a list of families with at least # members
+### List of TE families with at least # members
 
 Five thousand seems like a reasonable cutoff? The bigFams list can be used for plots of both H1 and H2, maybe?
 
@@ -403,6 +418,26 @@ famFacTally <- full_join(H1fams, H2fams, by = join_by(family, seqOnt),
 
 
 rm(H1fams, H2fams, Xsize, Ysize)
+```
+
+## Gene nonsense
+
+```{r filterGenesForLiftover, include=FALSE}
+H1GenesLiftedWell <- 
+  checkLifted(H1GenesRaw, H2LiftedRaw, H1scaffs, H2scaffs) %>%
+  window %>%
+  summarizeGenes
+  
+H2GenesLiftedWell <- 
+  checkLifted(H2GenesRaw, H1LiftedRaw, H2scaffs, H1scaffs) %>%
+  window %>%
+  summarizeGenes
+
+
+checkLifted(H1GenesRaw, H2LiftedRaw, H1scaffs, H2scaffs) %>%
+  write_tsv("data/H1GenesLiftedWell.tsv")
+checkLifted(H2GenesRaw, H1LiftedRaw, H2scaffs, H1scaffs) %>%
+  write_tsv("data/H2GenesLiftedWell.tsv")
 ```
 
 
@@ -538,7 +573,7 @@ rm(XsummedTEs, Y1summedTEs, Y2summedTEs)
 ### Genes
 
 ```{r genesInSexRegions}
-XsummedGenes <- H1Genes %>%
+XsummedGenes <- H1GenesLiftedWell %>%
   filter(scaff == "X") %>%
   splitX %>%
   group_by(region) %>%
@@ -551,7 +586,7 @@ XsummedGenes <- H1Genes %>%
   )) %>%
   select(region, X)
 
-Y1summedGenes <- H2Genes %>%
+Y1summedGenes <- H2Lifted %>%
   filter(scaff == "Y1") %>%
   splitY1 %>%
   group_by(region) %>%
@@ -563,7 +598,7 @@ Y1summedGenes <- H2Genes %>%
   )) %>%
   select(region, Y1)
 
-Y2summedGenes <- H2Genes %>%
+Y2summedGenes <- H2Lifted %>%
   filter(scaff == "Y2") %>%
   splitY2 %>%
   group_by(region) %>%
@@ -579,7 +614,7 @@ allSummedGenes <- full_join(XsummedGenes, Y1summedGenes,
                             by = join_by(region)) %>%
   full_join(Y2summedGenes, by = join_by(region)) %>%
   pivot_longer(cols = c(X, Y1, Y2), 
-               names_to = "Chromosome", values_to = "bp")
+               names_to = "Chromosome", values_to = "bp") %
 
 # Clean up intermediate files
 rm(XsummedGenes, Y1summedGenes, Y2summedGenes)
@@ -723,9 +758,9 @@ plotProportions <- function(TEs, Genes, name, legPos) {
 ```
 
 
-## TE barplots {.tabset}
+## Barplots {.tabset}
 
-### Frequency and Count per scaffold
+### TE Frequency and Count per scaffold
 
 Plot the sum of TE bp divided by the length of the scaffold they're found on.
 
@@ -769,7 +804,7 @@ H2EDTA %>%
 
 The untransformed count data is hard to parse (and generally just doesn't make sense).
 
-### Sex chromosome proportions
+### TE Sex chromosome proportions
 
 The first plot (with region on the x-axis) feels like the best way to visualise the comparisons we're interested in. 
 
@@ -798,13 +833,19 @@ allSummedTEs %>%
   facet_grid(vars(region))
 ```
 
+### Gene Sex chromosome proportions
+
 ```{r plotSummedGenes}
-ggplot(allSummedGenes, aes(x = region, y = bp, fill = Chromosome)) +
+TEsexChromosomes <- 
+  ggplot(allSummedGenes, aes(x = region, y = bp, fill = Chromosome)) +
   geom_col(position = position_dodge()) + 
   theme(legend.position = c(0.13, 0.78)) +
   pubTheme + scale_fill_manual(values = pubColours) +
   labs(x = "Region", y = "Fraction of region occupied by Genes", 
-       fill = "Chromosome")
+       fill = "Chromosome") %>%
+  filter()
+
+TEsexChromosomes
 ```
 
 
@@ -819,19 +860,21 @@ plotElements(H1EDTA, H1Genes, "H1")
 plotElements(H2EDTA, H2Genes, "H2")
 
 
-H2EDTA %>%
-  filter(scaff == "Y1" | scaff == "Y2") %>%
+landscapeFraction <- H1EDTA %>%
+  filter(scaff == "X") %>%
   ggplot() +
-  geom_line(data = H1EDTA, aes(winnum, amt, colour=seqOnt), 
+  geom_line(data = H2EDTA, aes(winnum, amt, colour = seqOnt), 
             linewidth = 0.3) +
-  geom_line(aes(winnum, amt, colour=seqOnt), linewidth = 0.3) +
-  geom_line(data = H1Genes, aes(winnum,amt)) +
-  geom_line(data = filter(H2Genes, scaff == "Y1" | scaff == "Y2"),
-            aes(winnum,amt)) +
+  geom_line(aes(winnum, amt, colour = seqOnt), linewidth = 0.3) +
+  geom_line(data = H2Genes, aes(winnum, amt)) +
+  geom_line(data = filter(H1GenesLiftedWell, scaff == "X"),
+            aes(winnum, amt)) + 
   pubTheme +
   labs(x = "Position (1Mb windows)", y = "Fraction of window", 
        colour="TE Type") +
   facet_grid(vars(scaff), scale="free_x", space="free")
+
+landscapeFraction
 ```
 
 ### TE counts
@@ -876,7 +919,7 @@ H1TEs %>%
   head(50) %>%
   ggplot(aes(x = reorder(family, -size), y = size)) +
   geom_col(aes(fill = seqOnt)) + 
-  geom_text(aes(label = n), size = 3,  angle = 85) +
+  geom_text(aes(label = n + 2), size = 3,  angle = 85) +
   pubTheme + theme(legend.position = c(0.8, 0.6)) +
   labs(x = "50 largest TE families in H1", 
        y = "Size (1Mb)", fill = "TE Type")
@@ -927,40 +970,54 @@ H2TEs %>%
 
 Some big families!! Not drastically larger than with the old data set, but a bit!
 
-### Family size differences across sex chromosomes
+### Sex chromosome Family size differences
 
 Bar plots of the largest families
 
 ```{r barplotBiggestFams}
 # # Using haplotype as a factor (which is probably cleaner?)
 famFacTally %>%
+  group_by(family) %>%
+  arrange(desc(total)) %>%
+  head(80) %>%
   ggplot(aes(x = reorder(family, -total), y = total / 1000000)) +
-  geom_col(aes(fill = haplotype, colour = seqOnt)) +
-  scale_fill_manual(values = c("black", "darkgrey")) +
-  #geom_text(aes(y = bp / 1000000 + 8, label = n), size = 3,  angle = 85) +
-  pubTheme + theme(legend.position = c(0.88, 0.61)) +
-  labs(x = "50 largest TE families across haplotypes",
-       y = "Size (Mb occupied)", colour = "TE Type", fill = "Haplotype")
+  geom_col(aes(fill = seqOnt, y = fraction, colour = haplotype), 
+           linewidth = 0.9, width = 0.5) +
+  scale_colour_manual(values = c("light grey", "black")) +
+  #geom_text(aes(y = fraction + 0.02, label = count), size = 3, angle = 85) +
+  pubTheme + theme(legend.position = c(0.94, 0.59),
+                   axis.text.x = element_blank(), 
+                   axis.ticks.x = element_blank()) +
+  labs(x = "40 largest TE families across haplotypes",
+       y = "Fraction of the sex chromosome occupied", 
+       colour = "Haplotype", fill = "TE Type")
 
 # Using points to differentiate haplotypes
-famTally %>%
+shapes <- c("H1" = 16, "H2" = 17)
+biggestFamBars <- famTally %>%
   # Keep only the largest families
   arrange(desc(bp)) %>%
-  head(50) %>%
+  head(40) %>%
   ggplot(aes(x = reorder(family, -bp), y = bp / 1000000)) +
   # The total across both haplotypes
-  geom_col(aes(fill = seqOnt)) +
+  geom_col(aes(fill = seqOnt), width = 0.8) +
   # Label columns with copy number across haplotypes
-  geom_text(aes(y = bp / 1000000 + 5, label = n), size = 3,  angle = 85) +
-  # Use points to differentiate haplotypes
-  geom_point(aes(y = bpH1 / 1000000), shape = 1, size = 2, stroke = 1.2) +
-  geom_point(aes(y = bpH2 / 1000000), shape = 2, size = 2, stroke = 1.2) +
-  pubTheme + theme(legend.position = c(0.88, 0.67)) +
-  labs(x = "50 largest TE families across haplotypes",
-       y = "Size (Mb occupied)", fill = "TE Type")
+  geom_text(aes(y = bp / 1000000 + 2.8, label = n), size = 3,  angle = 85) +
+  # Use points to differentiate haplotypes: 16 is a circle, 17 a triangle
+  geom_point(aes(y = bpH1 / 1000000, shape = "H1"), size = 2.5, stroke = 1.2) +
+  geom_point(aes(y = bpH2 / 1000000, shape = "H2"), size = 2.5, stroke = 1.2) +
+  pubTheme + theme(legend.position = c(0.95, 0.62),
+                   axis.text.x = element_blank(),
+                   axis.ticks.x = element_blank()) +
+  labs(x = "40 largest TE families across haplotypes",
+       y = "Size (Mb occupied)", fill = "TE Type", shape = "Haplotype") +
+  scale_shape_manual(values = shapes)
+biggestFamBars
 ```
 
 ### Scatterplot of family size on Haplotype 1 and Haplotype 2
+
+This now accounts for the total size of the sex chromosomes
 
 ```{r scatterplotFamAmounts}
 # Use a slope that represents the size difference between the chromosomes
@@ -976,7 +1033,7 @@ famTally %>%
   labs(x = "Fraction of the X occupied", size = "Number",
        y = "Fraction of Y1 and Y2 occupied", colour = "TE Type")
 
-famTally %>%
+TEfamCountOneToOne <- famTally %>%
   ggplot(aes(x = nH1, y = nH2, colour = seqOnt)) +
   geom_abline(slope = slopey) +
   # The total across both haplotypes
@@ -986,10 +1043,12 @@ famTally %>%
   labs(x = "Copy number on the X", size = "Size (Mb)",
        y = "Copy number on Y1 and Y2", colour = "TE Type")
 
+TEfamCountOneToOne
+
 rm(slopey)
 ```
 
-Accounting for total size 
+Faceting the plots by TE type to better see which ones are showing a strong pattern:
 
 ```{r famsFacetedByTEtype}
 # Use a slope that represents the size difference between the chromosomes
@@ -1162,6 +1221,37 @@ h1biggies %>%
 rm(h1biggies, h2biggies, bigSuperFams)
 ```
 
+# Figure 3
+
+## fig3: Accumulation of TEs
+
+```{r figure3, warning=FALSE}
+# fig3layout <- "
+# AAAA
+# ##BB
+# "
+
+
+fig3 <- 
+  landscapeFraction / (TEsexChromosomes | TEfamCountOneToOne) / biggestFamBars +
+  plot_layout(heights = c(2, 1, 2)) +
+  #plot_layout(design = fig3layout) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+  title = "Figure 3",
+  tag_levels = "A", 
+  caption = "(A) The fraction of genes in the window is from Haplotype 2, except for X, which has TEs from Haplotype 1 and the genes that lifted well from H1.  (B) Fraction of the region occupied by Genes.  (C) Fraction of the region occupied by TEs."
+)
+
+fig3 #quick preview to double-check
+
+# Save the plot as figure3.png "with sensible defaults"
+ggsave("figure3.png", plot = fig3, width = 10, height = 13)
+#ggsave("figure3.4.png", plot = fig3, scale = 4)
+```
+
+
+
 
 # Statistics
 
@@ -1180,11 +1270,23 @@ t.test(fraction ~ haplotype, data = famFacTally, paired = TRUE)
 
 # Testing things
 
+## TE families in spikes
+
+```{r}
+h2biggies <- H2TEs %>%
+  filter(scaff == "Y1" | scaff == "Y2") %>%
+  filter(family %in% bigFams) %>%
+  filter(start > 100000000, start < 300000000)
+
+write_tsv(h2biggies, "bigTEfamilies.H2.100-300Mb")
+```
+
+
 ## Gene sets
 
 Green is the lifted over data set (from H2 genes) and blue is lifted over from H1
 
-```{r geneSets}
+```{r geneSetLinePlots}
 ggplot(H1Genes, aes(winnum, n)) +
   geom_line() +
   geom_line(data = H1Lifted, aes(winnum, n), colour = pubColours[2]) +
@@ -1217,19 +1319,7 @@ ggplot(H2Genes, aes(winnum, bp)) +
 
 
 
-ggplot(H1Genes, aes(winnum, amt)) +
-  geom_line() +
-  geom_line(data = H1Lifted, aes(winnum, amt), colour = pubColours[2]) +
-  pubTheme +
-  labs(x = "H1 Position (1Mb windows)", y = "Fraction of window") +
-  facet_grid(vars(scaff))
 
-ggplot(H2Genes, aes(winnum, amt)) +
-  geom_line() +
-  geom_line(data = H2Lifted, aes(winnum, amt), colour = pubColours[1]) +
-  pubTheme +
-  labs(x = "H2 Position (1Mb windows)", y = "Fraction of window") +
-  facet_grid(vars(scaff))
 
 
 
@@ -1247,12 +1337,33 @@ ggplot(H1Genes, aes(winnum, amt)) +
 ggplot(H1Genes, aes(winnum, n)) +
   geom_line(data = H1Genes, colour = "forestgreen") +
   geom_line(data = H1Lifted, colour = pubColours[2]) +
+  geom_line(data = H1GenesLiftedWell, colour = "black") +
   geom_line(data = H2Genes, colour = "navy") +
   geom_line(data = H2Lifted, colour = pubColours[1]) +
+  geom_line(data = H2GenesLiftedWell, colour = "grey40") +
   pubTheme +
   labs(x = "H1 Position (1Mb windows)", y = "Number of genes") +
   facet_grid(vars(scaff))
 ```
+
+```{r testingLiftoverFilter}
+ggplot(H1GenesLiftedWell, aes(winnum, amt)) +
+  geom_line(data = H1Genes, aes(winnum, amt), colour = "forestgreen") +
+  geom_line(data = H1Lifted, aes(winnum, amt), colour = pubColours[2]) +
+  geom_line() +
+  pubTheme +
+  labs(x = "H1 Position (1Mb windows)", y = "Fraction of window") +
+  facet_grid(vars(scaff))
+
+ggplot(H2GenesLiftedWell, aes(winnum, amt)) +
+  geom_line(data = H2Genes, aes(winnum, amt), colour = "navy") +
+  geom_line(data = H2Lifted, aes(winnum, amt), colour = pubColours[1]) +
+  geom_line() +
+  pubTheme +
+  labs(x = "H2 Position (1Mb windows)", y = "Fraction of window") +
+  facet_grid(vars(scaff))
+```
+
 
 
 ## CDS instead of gene?
