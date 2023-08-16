@@ -16,7 +16,8 @@ pubTheme <-
         panel.background = element_rect(fill="#FFFFFF"), #plot body
         panel.grid = element_blank() #plot body pt2
   )
-pubColours <- c("#2d9da6","#99b700","#8a53b6","#bf4824","#152944")
+pubColours <- c("#90bb6a", "#1a63ca", "#0792c1", "#75674b", "#c7dd85",
+                "#4200de", "#679752", "#93003a", "#2bbacd", "#72dde6")
 ```
 
 ## Input data
