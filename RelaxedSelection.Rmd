@@ -25,7 +25,7 @@ pubTheme <-
   theme(title = element_text(size=10), #usually 14
         text = element_text(size=8),
         plot.background = element_rect(fill="lightgrey"),
-        #plot.title = element_text(hjust = 0.5), #not sure yet if I want this
+        #plot.title = element_text(hjust = 0.5), #centre justified
         strip.background = element_rect(linetype=0,linewidth=8,
                                         fill="grey"), #facet boxes
         strip.text = element_text(size=10), #usually 11
@@ -37,7 +37,51 @@ pubTheme <-
   )
 #thesisColours <- c("#d84638","#65bc5c","#01a5bc","#516fc8","#373f51") #dark
 pubColours <- c("#2d9da6","#99b700","#8a53b6","#bf4824","#152944") #for white paper
+
+
+darkTheme <- 
+  theme(plot.background = element_rect(fill="#000000"),
+        line = element_line(colour="#ead8c2"),
+        text = element_text(colour="white",size=16),
+        axis.text = element_text(colour="white"),
+        panel.border = element_rect(colour="white"),
+        panel.background = element_rect(colour="white", fill="#101010"),
+        panel.grid = element_line(colour="white"),
+        axis.line.x = element_line(colour="#ead8c2"),
+        axis.line.y = element_line(colour="#ead8c2"),
+        axis.ticks = element_line(colour="white"),
+        legend.background=element_rect(fill="#050505"),
+        strip.text = element_text(colour="#ead8c2", size=12),
+        strip.background = element_rect(fill="#202020", linetype=0,
+                                        colour="#202020", linewidth=8))
+
+
+newTheme <- theme(
+  plot.title = element_text(face = "bold", size = rel(1.2)),
+  panel.background = element_rect(colour = NA),    #plot body
+  panel.grid = element_blank(),
+  plot.background = element_rect(colour = NA),   #area around plot
+  #panel.border = element_rect(colour = NA),
+  axis.title = element_text(face = "bold", size = rel(1)),
+  # Facet label boxes
+  strip.background = element_rect(linetype = 0, linewidth = 8),
+  strip.texxt = element_text (face = "bold"),
+  # Legend
+  legend.key = element_rect(colour = NA),
+  legend.key.size = unit(0.2, "cm"), 
+  legend.title = element_text(size = rel(0.9))
+)
 ```
+
+```{r testTheme, warning=FALSE}
+allRegionTEs %>%
+  ggplot(aes(x = region, y = Frequency, fill = Chromosome)) +
+  geom_col(position = position_dodge()) +
+  newTheme + scale_fill_manual(values = pubColours) +
+  labs(x = "Region", y = "Frequency of TEs", fill = "Chromosome", title = "test") +
+  facet_grid(vars(location), space = "free")
+```
+
 
 # Data Overview {.tabset}
 
@@ -83,11 +127,24 @@ H2scaffs <- c("A1", "A2", "A4", "Y1", "Y2")
 
 # Division points for the sex chromosome regions 
 sexRegionEnds <- tibble(
-  Region = c("PAR1", "Old", "New", "PAR2"),
+  Region = c("PAR", "Old", "New", "PAR"),
   X = c(71000000, 261000000, 367000000, 483000000),
   Y1 = c(343000000, 272000000, 64000000, NA),
   Y2 = c(NA, 348000000, 159000000, 121000000)
 )
+# This version is just for making dotted lines on chromosomal landscape plots
+Xdiv <- expand.grid(scaff = factor(c("X")), pos = c(61, 261, 367))
+Xlabels <- tibble(scaff = c("X", "X", "X", "X"),
+                  stratum = c("PAR", "Old", "New", "PAR"),
+                  pos = c(40, 180, 300, 400))
+Y1div <- expand.grid(scaff = factor(c("Y1")), pos = c(64, 272))
+Y1labels <- tibble(scaff = c("Y1", "Y1", "Y1"),
+                   stratum = c("New", "Old", "PAR"),
+                   pos = c(25, 120, 300))
+Y2div <- expand.grid(scaff = factor(c("Y2")), pos = c(121, 159))
+Y2labels <- tibble(scaff = c("Y2", "Y2", "Y2"),
+                   stratum = c("PAR", "New", "Old"),
+                   pos = c(80, 140, 290))
 ```
 
 Function to import the files with upstream, downstream, exon, and intron TE information into one list of tibbles.
@@ -230,10 +287,10 @@ Functions to split up windowed data into pseudo-autosomal and old/new sex-linked
 divideX <- function(df) {
   df %>%
     mutate(region = case_when(
-    winnum < 71   ~ "PAR1",
+    winnum < 71   ~ "PAR",
     winnum < 261  ~ "Old",
     winnum < 367  ~ "New",
-    winnum >= 367 ~ "PAR2"
+    winnum >= 367 ~ "PAR"
   ))
 }
 
@@ -242,14 +299,14 @@ divideY1 <- function(df) {
     mutate(region = case_when(
     winnum < 64   ~ "New",
     winnum < 272  ~ "Old",
-    winnum >= 272 ~ "PAR1"
+    winnum >= 272 ~ "PAR"
   ))
 }
 
 divideY2 <- function(df) {
   df %>%
     mutate(region = case_when(
-      winnum < 121  ~ "PAR2",
+      winnum < 121  ~ "PAR",
       winnum < 159  ~ "New",
       winnum >= 159 ~ "Old"
     ))
@@ -478,6 +535,8 @@ Bedtools overlap also provides the *number* of TEs in a given feature, which is 
 ```{r plotTEsum}
 H1counts %>%
   ggplot(aes(winnum)) +
+  geom_vline(data = Xdiv, aes(xintercept = pos), linetype = "dotted",
+             colour = "#152944") +
   geom_line(aes(y = upSum, colour = "Upstream")) +
   geom_line(aes(y = downSum, colour = "Downstream")) +
   geom_line(aes(y = exonSum, colour = "Exon")) +
@@ -490,6 +549,10 @@ H1counts %>%
 
 H2counts %>%
   ggplot(aes(winnum)) +
+  geom_vline(data = Y1div, aes(xintercept = pos), linetype = "dotted",
+             colour = "#152944") +
+  geom_vline(data = Y2div, aes(xintercept = pos), linetype = "dotted",
+             colour = "#152944") +
   geom_line(aes(y = upSum, colour = "Upstream")) +
   geom_line(aes(y = downSum, colour = "Downstream")) +
   geom_line(aes(y = exonSum, colour = "Exon")) +
@@ -517,6 +580,8 @@ H1counts %>%
   facet_grid( vars(scaff), scale = "free_x", space = "free" )
 ```
 
+### Count divided by feature count
+
 I also divided each window's TE sum metric by the number of features in it (e.g. the average number of intron TEs in the window is divided by the number of introns).
 
 ```{r plotCountOverFeatureCount}
@@ -543,27 +608,6 @@ H2counts %>%
        y = "Windowed count divided by feature count",
        colour = "Location") +
   facet_grid( vars(scaff), scale = "free_x", space = "free" )
-
-
-
-countOverFeatureCount <- H1counts %>%
-  filter(scaff == "X") %>%
-  ggplot(aes(winnum)) +
-  geom_line(aes(y = upSum/upNum, colour = "Upstream")) +
-  geom_line(aes(y = downSum/downNum, colour = "Downstream")) +
-  geom_line(aes(y = exonSum/exonNum, colour = "Exon")) +
-  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
-  geom_line(data = H2counts, aes(y = upSum/upNum, colour = "Upstream")) +
-  geom_line(data = H2counts, aes(y = downSum/downNum, colour = "Downstream")) +
-  geom_line(data = H2counts, aes(y = exonSum/exonNum, colour = "Exon")) +
-  geom_line(data = H2counts, aes(y = intronSum/intronNum, colour = "Intron")) +
-  pubTheme + #theme(legend.direction = "horizontal", legend.position = "top") +
-  labs(x = "Position (1Mb windows)", 
-       y = "Windowed count divided by feature count",
-       colour = "Location") +
-  facet_grid(vars(scaff), scale="free_x", space="free")
-
-countOverFeatureCount
 ```
 
 With the unfiltered data set, there were an average of 2 TEs within 1kb of genes. With the filtered set, it looks about the same but with variation closer to what I'd expect (low levels in the regions of high gene density).
@@ -640,13 +684,13 @@ X chromosome introns seem to be much more frequent/larger for these 1:1 ortholog
 
 ### Divisions within sex chromosomes
 
-```{r barplotsSexChroms, warning=FALSE}
+```{r barplotsSexChroms}
 regionFrequency <- allRegionTEs %>%
   ggplot(aes(x = region, y = Frequency, fill = Chromosome)) +
   geom_col(position = position_dodge()) +
   pubTheme + scale_fill_manual(values = pubColours) +
   labs(x = "Region", y = "Frequency of TEs", 
-       fill = "Chromosome") +
+       fill = "Chromosome") + theme(legend.position = "none") +
   facet_grid(vars(location), space = "free")
 
 regionFrequency
@@ -660,7 +704,7 @@ For this section, every point on the graph is a gene with at least one ortholog 
 
 ### Quick stats - Count
 
-```{r genewiseQuickCountStats}
+```{r genewiseQuickCountStats, eval=FALSE}
 #glimpse(pairedGenes)
 
 # Count data
@@ -694,7 +738,7 @@ pairedGenes %>%
   facet_wrap(vars(location), scales = "free")
 ```
 
-```{r genewisePlotQuickCountStats}
+```{r genewisePlotQuickCountStats, eval=FALSE}
 # Plot Mean 
 ggplot(pairedCount) +
   geom_point(aes(x = scaffH1, y = meanH1, size = n), colour = pubColours[1],
@@ -939,15 +983,82 @@ ggplot(pairedTest) +
 
 # Figure 4
 
+```{r finalFeatCount}
+countOverFeatureCount <- H1counts %>%
+  filter(scaff == "X") %>%
+  ggplot(aes(winnum)) +
+  geom_vline(data = Xdiv, aes(xintercept = pos),
+             linetype = "dotted", colour = "#152944") +
+  geom_vline(data = Y1div, aes(xintercept = pos), 
+             linetype = "dotted", colour = "#152944") +
+  geom_vline(data = Y2div, aes(xintercept = pos), 
+             linetype = "dotted", colour = "#152944") +
+  geom_text(data = Xlabels, aes(x = pos, y = 7, label = stratum), 
+            colour = "#152944") +
+  geom_text(data = Y1labels, aes(x = pos, y = 7, label = stratum), 
+            colour = "#152944") +
+  geom_text(data = Y2labels, aes(x = pos, y = 7, label = stratum), 
+            colour = "#152944") +
+  geom_line(aes(y = upSum/upNum, colour = "Upstream")) +
+  geom_line(aes(y = downSum/downNum, colour = "Downstream")) +
+  geom_line(aes(y = exonSum/exonNum, colour = "Exon")) +
+  geom_line(aes(y = intronSum/intronNum, colour = "Intron")) +
+  geom_line(data = H2counts, aes(y = upSum/upNum, colour = "Upstream")) +
+  geom_line(data = H2counts, aes(y = downSum/downNum, colour = "Downstream")) +
+  geom_line(data = H2counts, aes(y = exonSum/exonNum, colour = "Exon")) +
+  geom_line(data = H2counts, aes(y = intronSum/intronNum, colour = "Intron")) +
+  pubTheme + #theme(legend.direction = "horizontal", legend.position = "bottom") +
+  labs(x = "Position (1Mb windows)", 
+       y = "TE count divided by feature count",
+       colour = "Location") +
+  facet_grid(vars(scaff), scale="free_x", space="free")
+
+countOverFeatureCount
+
+#ggsave("relaxedSelection.png", plot = countOverFeatureCount, width = 6, height = 4)
+```
+
+```{r barsOfTEsInSexRegions, warning=FALSE}
+regionFrequency <- allRegionTEs %>%
+  mutate(region = case_when(region == "PAR1" ~ "PAR",
+                            region == "PAR2" ~  "PAR",
+                            .default = region)) %>%
+  ggplot(aes(x = region, y = Frequency, fill = Chromosome)) +
+  geom_col(position = position_dodge()) +
+  pubTheme + scale_fill_manual(values = pubColours) +
+  labs(x = "Region", y = "Frequency of TEs near genes", 
+       fill = "Chromosome") +
+  facet_grid(vars(location), space = "free")
+
+regionFrequency
+```
+
+```{r barsOfSexRegionSizes, warning=FALSE}
+regionSizes <- allRegionSizes %>%
+  mutate(region = case_when(region == "PAR1" ~ "PAR",
+                            region == "PAR2" ~  "PAR",
+                            .default = region)) %>%
+  ggplot(aes(x = region, y = Size, fill = Chromosome)) +
+  geom_col(position = position_dodge()) +
+  pubTheme + scale_fill_manual(values = pubColours) +
+  labs(x = "Region", y = "Number of bp in this region", 
+       fill = "Chromosome") +
+  facet_grid(vars(location), space = "free")
+
+regionSizes
+```
+
+## Relaxed Selection Figure
+
 ```{r fig4}
 fig4 <- 
   countOverFeatureCount / (regionFrequency | regionSizes) +
   plot_layout(heights = c(2, 1)) +
   plot_layout(guides = "collect") +
   plot_annotation(
-  title = "Figure 4",
-  tag_levels = "A", 
-  caption = "(A) The fractio (B) Fraction of the region occupied by Genes.  (C) Fraction of the region occupied by TEs.")
+  #title = "Figure 4",
+  tag_levels = "A")
+  #caption = "(A) The fractio (B) Fraction of the region occupied by Genes.  (C) Fraction of the region occupied by TEs.")
 
 fig4 #quick preview to double-check
 
