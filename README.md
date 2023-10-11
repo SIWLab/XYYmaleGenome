@@ -49,4 +49,4 @@ Specific goals for this file:
 - Per gene, understand whether it's more likely to be near TEs if on the X or Ys
 
 # License
-The content of this project itself is licensed under the Creative Commons Attribution 4.0 license, and the underlying source code used to format and display that content is licensed under the MIT license.
+The content of this project itself is licensed under the [Creative Commons Attribution 4.0 license](https://creativecommons.org/licenses/by-sa/4.0/), and the underlying source code used to format and display that content is licensed under the [MIT license](https://spdx.org/licenses/MIT.html).
