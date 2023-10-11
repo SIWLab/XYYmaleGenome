@@ -47,3 +47,6 @@ Specific goals for this file:
 - Visualise the chromosomal landscape of TEs near 1:1:1 orthologous genes
 - Visualise the fraction of genes with nearby TE insertions, categorized by chromosomal location
 - Per gene, understand whether it's more likely to be near TEs if on the X or Ys
+
+# License
+The content of this project itself is licensed under the Creative Commons Attribution 4.0 license, and the underlying source code used to format and display that content is licensed under the MIT license.
