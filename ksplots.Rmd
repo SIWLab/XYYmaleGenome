@@ -4,11 +4,10 @@ output: html_notebook
 ---
 ### setup
 ```{r include=FALSE}
-library(renv)
+
 library(tidyverse)
 library(cowplot)
-#renv::init()
-#renv::snapshot()
+
 ```
 #### loading in files
 ```{r}
@@ -61,6 +60,16 @@ ks_df_md <- ks_df %>%
   mutate(mdn = median(Ks))
 
 ```
+
+```{r}
+a1<-ks_plot_auto(ks_df,"A1",NA)
+a2<-ks_plot_auto(ks_df,"A2",NA)
+a4<-ks_plot_auto(ks_df,"A4",NA)
+x<-ks_plot_auto(ks_df, "X",NA)
+cowplot::plot_grid(a1,a2,x,a4)
+ggsave("ks_all_nolimit.jpg",width=8,height=6)
+```
+
 ### Exploratory plots
 #### Raw Ks values and chromosome medians
 ```{r}
@@ -78,11 +87,13 @@ ks_plot_X<- function(df,chr,y_lim){ks_plot_auto(df,chr,y_lim) +
   annotate("text", x = .5*(367+500), y = y_lim - 0.05, label = "PAR2",size=4) + 
   geom_step(aes(y = mdn, colour = "red"))}
 
-xplot<-ks_plot_X(ks_df_md,"X",0.6)
+
+#ggsave("ks_genes.jpg",width=6,height=4,units = "in")
 a1<-ks_plot_auto(ks_df_md,"A1",NA)
 a2<-ks_plot_auto(ks_df_md,"A2",NA)
 a4<-ks_plot_auto(ks_df_md,"A4",NA)
 cowplot::plot_grid(a1,a2,xplot,a4)
+ggsave("ks_all_nolimit.jpg",width=6,height=4)
 #ggsave("ks_genes_x.jpg",width = 6, height = 4, units = "in")
 #ks_df_md_02<-ks_df_md %>% filter(Ks<0.2)
 ks_plot_X((ks_df_md %>% filter(Ks<0.2)),"X",0.3) + ylab("Ks filter 0.2")
@@ -92,12 +103,12 @@ ks_plot_auto(ks_df_md %>% filter(Ks<0.2),"A2",NA) + ylab("Ks filter 0.2")
 #### Ks in windows of 100 genes
 ```{r}
 library(slider)
- windowmaker<- function(df,win){ks_df_md %>% filter(Ks<0.2) %>%
+ windowmaker<- function(df,win,ks){ks_df_md %>% filter(Ks<ks) %>%
   group_by(chr1) %>%
   arrange(name1,chr1, start1_mb) %>%
   mutate(Ks_win = slider::slide_dbl(Ks, median, .before = win/2, .after = win/2,.step = 1,.complete =T))}
-ks_win100<-windowmaker(ks_df_md,win = 100)
-#ks_win50<-windowmaker(ks_df_md,win=50)
+ks_win100<-windowmaker(ks_df_md,win = 100,0.2)
+ks_win100_ks3<-windowmaker(ks_df_md,win=100,0.3)
 
 ks_plot_window<-function(df,chr,y_lim){ggplot(filter(df,chr1 == chr), aes(start1_mb)) +
   geom_line(aes(y=Ks_win)) +
@@ -113,12 +124,14 @@ ks_plot_window(ks_win100,"X",y_lim) + geom_vline(xintercept=vlines, linetype = "
 #ks_plot_window(ks_win50,"X",NA)
 #ggsave("ks_genes_window_X_june22.jpg",dpi=300,width = 6, height = 4, units = "in")
 y_lim<-0.05
+#y_lim<-0.2 # limit doesnt remove data
 a1win<-ks_plot_window(ks_win100,"A1",y_lim)
 a2win<-ks_plot_window(ks_win100,"A2",y_lim)
 a4win<-ks_plot_window(ks_win100,"A4",y_lim)
 xwin<- ks_plot_window(ks_win100,"X",y_lim) + geom_vline(xintercept=vlines, linetype = "dashed")
 a2win
 cowplot::plot_grid(a1win,a2win,xwin,a4win,nrow=1)
+
 ## save as one panel
 
 #ggsave("all_chr_ks_100win.jpg",dpi=300,width = 12, height = 4)
@@ -163,19 +176,15 @@ orderlist<-c("Scaffold_4","Scaffold_8","Scaffold_7",
 ks_df_sal <- transform(ks_df_sal, salchr = factor(salchr, levels = orderlist))
 #levels(ks_df_sal$salchr)
 ks_win100_sal<-windowmaker_sal(ks_df_sal,win = 100, start_salmb)
-
+ks_win10_sal<-windowmaker_sal(ks_df_sal, win = 10, start_salmb)
 #ks_plot_window(ks_df_sal,"X",y_lim) + geom_rect(aes(color = interpChr))
-
-# ggplot(filter(ks_df_sal,chr1 =="X"), aes(start1_mb)) +  
+#ggplot(filter(ks_df_sal,chr1 =="X"), aes(start1_mb)) +
 #   geom_point(aes(y=Ks_win, colour = interpChr)) +
-#   theme_classic() 
-# ggsave("colordot_sal_ks.jpg",dpi=300,width=6, height=4)
-# ggplot(filter(ks_df_sal,chr1 =="X"), aes(start1_mb)) +  
-#   geom_line(aes(y=Ks_win)) +
-#   geom_rect(aes(xmin = min(start1_mb), xmax = max(start1_mb), fill = party),
-#          ymin = -Inf, ymax = Inf, alpha = 0.2,
-#          data = presidential) +
 #   theme_classic()
+# ggsave("colordot_sal_ks.jpg",dpi=300,width=6, height=4)
+#ggplot(filter(ks_df_sal,chr1 =="X"), aes(start1_mb)) +
+#  geom_line(aes(y=Ks_win)) +
+#  theme_classic()
 ```
 
 #### raw Ks colored by salicifolius chromosome homology
@@ -206,6 +215,19 @@ ggplot(filter(ks_win100_sal,chr1 =="X"), aes(start_salmb,group = salchr)) +
    facet_grid(~salchr) +
    ylim(0,0.05) +
    theme(panel.spacing = unit(0,'lines'))
+
+ggplot(filter(ks_win10_sal,chr1 =="X", salchr == "Scaffold_7"), aes(start_salmb,group = salchr)) +  
+   geom_line(aes(y=Ks_win, colour = salchr)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+   ylim(0,0.05) +
+   theme(panel.spacing = unit(0,'lines'))
+ggplot(filter(ks_df_sal,chr1 =="X",salchr == "Scaffold_7"), aes(start1,group = salchr)) +  
+   geom_point(aes(y=Ks, colour = salchr)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+   ylim(0,0.05) +
+   theme(panel.spacing = unit(0,'lines'))
 ```
 
 #### windowed Ks for all chr in sal order
@@ -226,6 +248,13 @@ ggplot(filter(ks_win100_sal,chr1 =="X"), aes(start_salmb,group = salchr)) +
    facet_grid(~salchr) +
   ylim(0,0.2) 
 #ggsave("combo_Ks_salord.jpg",dpi=300,width=10,height=4)
+
+ggplot(filter(ks_win100_sal,chr1 =="X"), aes(start_salmb,group = salchr)) +  
+   geom_point(aes(y=Ks, colour = salchr,alpha=0.5)) +
+  geom_line(aes(y=Ks_win)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+  ylim(0,0.2) 
 ```
 ### Final plots for publication
 ```{r}
@@ -238,7 +267,7 @@ pubTheme <-
 ```{r}
 #pubColours <- c("#2d9da6","#99b700","#8a53b6","#bf4824","#152944")
 library(RColorBrewer)
-ksplot<-ggplot(filter(ks_win100,!grepl("scaffold", chr1)), aes(start1_mb,group = chr1)) +  
+ksplot03<-ggplot(filter(ks_win100_ks3,!grepl("scaffold", chr1)), aes(start1_mb,group = chr1)) +  
    geom_line(aes(y=Ks_win, colour = chr1)) +
    facet_grid(~chr1,scales="free_x") +
    ylim(0,0.05) +
@@ -247,6 +276,10 @@ ksplot<-ggplot(filter(ks_win100,!grepl("scaffold", chr1)), aes(start1_mb,group =
   xlab("Maternal Haplotype\nposition(Mb)") +
   ylab("Median Ks\n(100 gene windows)") 
 ksplot
+ksplot03
+
+
+
 ```
 #### recreate dotplot for multipanel plot
 Invert some chrs in plot
@@ -254,8 +287,8 @@ Invert some chrs in plot
 ## read in file of cleaned COGE anchors created from anchorwaveplots.Rmd 
 anchors_mb<-read_delim("data/anchors_mb.txt")
 ##
-max_query_mb <- function(chr){max(filter(.,newChr ==chr)$queryMb)}
-max_query_mb("Y")                          
+max_query_mb <- function(chr){max(filter(anchors_mb,newChr ==chr)$queryMb)}
+#max_query_mb("Y")                          
 
 anchors_inv<-anchors_mb %>% group_by(newChr) %>% 
   mutate(newstartMb = case_when(newChr == "Y" ~ (max_query_mb("Y") - queryMb),
@@ -293,13 +326,13 @@ dotplot<-ggplot(anchors_inv,aes(referenceMb,newstartMb)) +
   geom_vline(data = dummy3, aes(xintercept = 71),linetype = 'dashed') +
   geom_vline(data = dummy3, aes(xintercept = 261),linetype = 'dashed') +
   geom_vline(data = dummy3, aes(xintercept = 367),linetype = 'dashed') +
-  geom_text(data = dat_text,size=2,mapping = aes(x = x, y = y, label = label)) +
+  geom_text(data = dat_text,size = 4,mapping = aes(x = x, y = y, label = label)) +
   ylim(0,430) +
   theme(axis.text.x=element_blank(),
         axis.title.x=element_blank(),
         axis.ticks.x=element_blank(),
-        legend.position="none") +
-        #strip.text.x = element_blank())+
+        legend.position="none",
+        strip.text = element_text(size = 16))+
     ylab("Paternal Haplotype\nposition(Mb)") 
 
 dotplot  
@@ -336,21 +369,33 @@ ksplot2
 
 comboplot2<-cowplot::plot_grid(dotplot,ksplot2,nrow=2,align="v",axis="lr")
 comboplot2
-ggsave("ksplot_dotplot_salcolors.jpg",dpi=300,width =10,height=7)
-ggsave("ksplot_dotplot_salcolors.png",dpi=300,width =10,height=7,bg = "white")
+#ggsave("ksplot_dotplot_salcolors.jpg",dpi=300,width =10,height=7)
+#ggsave("ksplot_dotplot_salcolors.png",dpi=300,width =10,height=7,bg = "white")
+ggsave("ksplot_dotplot_salcolors_rezize.pdf",dpi=300,width =10,height=7)
 
 ```
 To do:
-* fix axis points
-* why is start position not zero for A2-X??? need to adjust how I've flipped the chr...
-* grey label only, top, remove middle
-* wa hoo!
-------
 * next:gene loss plots, ASE
 * save as jpg and PNG for pub
 * figure legends in text below (goog doc)
 * list of silenced genes from ASE analysis
    - combine w TE
+
+## chi square
+```{r}
+### KS  sal
+fishtab<-ks_df_sal %>% filter(!is.na(salicifolius)) %>%group_by(salchr,Ks>0.03) %>% summarise(n=n()) %>% filter(salchr == "Scaffold_7"|salchr == "Scaffold_8") %>% 
+  pivot_wider(names_from = salchr,values_from = n)
+fishmat<-fishtab %>% select(2,3) %>% as.matrix()
+ft<-fisher.test(fishmat)
+fishtab
+ft$estimate
+ct<-chisq.test(fishmat,correct = F)
+ct
+```
+```{r}
+
+```
 
 
 
