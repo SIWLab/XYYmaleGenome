@@ -1,0 +1,195 @@
+---
+title: "Non syntenic orthologs"
+output: html_notebook
+---
+## non syntenic orthos - chi square
+### data cleaning 
+goal: are there more NS orths in some regions vs others? X v Y
+
+#### Long format data
+```{r}
+library(tidyverse) 
+source("slr_rename.R") 
+
+salpg_long<-data.table::fread("salicifolius_pangenes.txt")
+hap1pg_long<-data.table::fread("hap1_pangenes.txt") 
+hap2pg_long<-data.table::fread("hap2_pangenes.txt")
+a<-salpg_long %>% n_distinct() 
+b<-hap1pg_long %>% n_distinct()
+c<-hap2pg_long %>% n_distinct()
+# creating df to compare rows and number of orths
+filenames<-c("sal","hap1","hap2")
+nrow_long<-c(a,b,c)
+```
+
+#### Wide format data
+```{r}
+salpg_wide<-data.table::fread("pg_sal_wide.txt")
+hap1pg_wide<-data.table::fread("pg_hap1_wide.txt")
+hap2pg_wide<-data.table::fread("pg_hap2_wide.txt")
+
+A<-salpg_wide %>% n_distinct()
+B<-hap1pg_wide %>% n_distinct()
+C<-hap2pg_wide %>% n_distinct()
+nrow_wide<-c(A,B,C)
+raw<-data.frame(nrow_long,nrow_wide,row.names = filenames)
+library(kableExtra)
+kable(raw) %>% kable_classic()
+
+```
+#### sanity checks
+Are the number of ORths, NSorths, similar or different between the file formats? which file format is better to use?
+
+```{r}
+a <-salpg_long %>% filter(genome == "salicifolius") %>%select(flag,id) %>% unique() %>% group_by(flag) %>% summarise(n = n())
+
+b<- hap1pg_long%>% filter(genome == "salicifolius") %>%select(flag,id) %>% unique() %>% group_by(flag) %>% summarise(n = n())
+
+c <-hap2pg_long %>% filter(genome == "salicifolius") %>%select(flag,id) %>% unique() %>% group_by(flag) %>% summarise(n = n())
+
+#nrow_longhap1<-(c(a,b,c))
+#nrow_long_hap2<-(c(a,b,c))
+nrow_long_sal<-(c(a,b,c))
+#a<-as.data.frame(nrow_long_sal)
+nrow_long_sal$n
+#nrow_longhap1$n
+#nrow_long_hap2$n
+#kable(nrow_longhap1) %>% kable_classic()
+# barely different..
+#aID<-salpg_long %>% filter(genome == "hap1") %>%select(flag,id) %>% unique() 
+#bID<-hap1pg_long%>% filter(genome == "hap1") %>%select(flag,id) %>% unique() 
+#setdiff(aID,bID) #480 diff -  #just the hap1 genes
+```
+
+
+### post-meeting redo
+Same og data as gene loss, just keep in nsorths
+```{r}
+allorths<-salpg_wide %>% 
+  filter((hap1!=""|hap2!="")&salicifolius!="") %>% 
+  filter(!grepl("\\|",hap1) &
+         !grepl("\\|",hap2) & 
+         !grepl("\\|",salicifolius))%>%
+  filter(!grepl("\\+",hap1) &
+         !grepl("\\+",hap2) & 
+         !grepl("\\+",salicifolius))
+allorths
+
+### filter by salicifolius as genome, coutn siotes where either hap1 or hap2 countains an * but sal doesn't
+allnsorths<-allorths %>% filter(grepl("\\*", hap1) |
+                                   grepl("\\*",hap2)) %>% 
+                                  filter(!grepl("\\*",salicifolius))
+
+## summarise
+# allnsorths.n <- allnsorths %>% mutate(h1NSO=if_else((grepl("\\*",hap1)), 1,0)) %>%
+#                 mutate(h2NSO=if_else((grepl("\\*",hap2)), 1,0)) %>% 
+#   mutate(hap1id = str_remove(hap1,"\\*")) %>%
+#   mutate(hap2id = str_remove(hap2,"\\*"))
+
+nsoHap1<-allnsorths %>% filter(grepl("\\*", hap1)) %>% 
+                                  filter(!grepl("\\*",hap2)) %>% filter(hap2 !="")
+
+nsoHap2<-allnsorths %>% filter(grepl("\\*", hap2)) %>% 
+                        filter(!grepl("\\*",hap1)) %>% filter(hap1 !="")
+
+#View(hap1nsorths.n)
+
+## merge *actual* physical positions from long file
+
+## 
+
+hap1chrpos<- hap1pg_long %>% filter(genome =="hap1") %>% select(genome,id,chr,start,end) %>% unique()
+hap2chrpos<- hap2pg_long %>% filter(genome == "hap2") %>% select(genome,id,chr,start,end) %>% unique()
+hap1region<-slr_rename_PARs(hap1chrpos)  
+hap2region<-slr_rename_PARs(hap2chrpos)
+
+## region step might be premature...
+# the rows we want may have positions not listed
+
+# tempdf<-allnsorths.n %>% left_join(hap1region,
+#           by = c("hap1id" ="id"),
+#           suffix = c("",".h1")) %>% left_join(hap2region, 
+#             by = c("hap2id" = "id"), suffix = c("",".h2"))
+
+nsoHap1fix<-nsoHap1 %>% mutate(hap1id = str_remove(hap1,"\\*")) %>% 
+  left_join(hap1region,by = c("hap1id"="id"),suffix = c("",".h1"))
+nsoHap2fix<-nsoHap2 %>% mutate(hap2id = str_remove(hap2,"\\*")) %>% 
+  left_join(hap2region,by = c("hap2id"="id"),suffix = c("",".h1"))
+
+summary_nsoHap1<-nsoHap1fix %>% group_by(region) %>% summarise(n=n()) %>% drop_na()
+summary_nsoHap2<-nsoHap2fix %>% group_by(region) %>% summarise(n=n()) %>% drop_na()
+
+df<-full_join(summary_nsoHap1,summary_nsoHap2,by = "region",suffix = c(".hap1",".hap2"))
+colnames(df)<-c("region","hap1","hap2")
+View(df)
+```
+Chi squ finally bishh
+
+```{r}
+read.csv("~/Dropbox/XYYmalegenome/")
+summary_all<- df %>% remove_rownames() %>%
+    column_to_rownames("region")
+summary_sex<-df %>% filter(!grepl("A",region)) %>% remove_rownames() %>%
+   column_to_rownames("region")
+p<-(rep(c(1/6),times=6))     
+p
+test1<-as.matrix(summary_all)
+testres1<-chisq.test(test1,correct = F)
+testres1$expected
+testres1$p.value
+testres1$residuals
+testres1 # significant
+testres1$method
+ test2<-as.matrix(summary_sex)
+# #dimnames(test2)
+test2
+exp<-c(0.25,0.25,0.25,0.25)
+testres2<-chisq.test(test2,p)
+testres2
+rm(testres2)
+testres2$observed
+testres2$p.value
+
+# ??fisher.test()
+test3<-fisher.test(summary_sex$hap1,summary_sex$hap2)
+ test3$p.value
+# test3
+# ## 
+# matrix3<-as.matrix(summary_sex[2:3])
+# fisher.test(matrix3)
+summary_all
+ks.test(summary_all,y=pnorm)
+```
+REDO
+```{r}
+## summarise by autosomes
+df2<-df %>%
+  mutate(region = if_else(region %in% c("A1","A2","A4"),"Autosome", region)) %>% group_by(region) %>% summarise(hap1 = sum(hap1),hap2 = sum(hap2))
+summary_auto<- df2 %>% remove_rownames() %>%
+    column_to_rownames("region")
+test4<-chisq.test(summary_auto)
+test4$expected
+test4$p.value
+test4$residuals
+
+
+### 2x2 contingency table
+
+df3 <-filter(df2,region == "Autosome"|region =="OldSLR") %>% remove_rownames() %>% column_to_rownames("region")
+test5<-chisq.test(df3)
+test5
+summary(test5)
+
+#The null hypothesis asserts the independence of the variables under consideration (so, for example, haplotype and region are independent of each other wrt ortholog content.
+
+test5$expected
+test5$residuals
+test5$p.value
+test5
+prop.table(df3)
+oddsRatio(df3,verbose =TRUE)
+#The odds of _ is 0.176 more liekyl than the odds of blank if blank?
+```
+
+
+

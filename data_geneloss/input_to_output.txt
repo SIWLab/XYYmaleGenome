@@ -1,0 +1,10 @@
+ScaOOZI_7;HRSCAF=10	Scaffold_1
+ScaOOZI_9;HRSCAF=13	Scaffold_2
+ScaOOZI_5;HRSCAF=7	Scaffold_3
+ScaOOZI_6;HRSCAF=9	Scaffold_4
+ScaOOZI_4;HRSCAF=5	Scaffold_5
+ScaOOZI_2;HRSCAF=3	Scaffold_6
+ScaOOZI_8;HRSCAF=11	Scaffold_7
+ScaOOZI_3;HRSCAF=4	Scaffold_8
+ScaOOZI_34;HRSCAF=39	Scaffold_9
+ScaOOZI_1;HRSCAF=1	Scaffold_10

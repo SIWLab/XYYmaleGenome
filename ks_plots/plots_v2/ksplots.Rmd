@@ -1,0 +1,403 @@
+---
+title: "Ks plots for genome paper"
+output: html_notebook
+---
+### setup
+```{r include=FALSE}
+
+library(tidyverse)
+library(cowplot)
+
+```
+#### loading in files
+```{r}
+ksheader<-read.table("65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20_g10_A5.aligncoords.gcoords.ks.txt",comment.char ="",skip = 2,nrows = 1) %>% select(-V13) %>% rename() 
+
+```
+##### Tweak header names and add to main file.
+```{r}
+ksheader$V1<-"Ks"
+ksheader$V3<-"a_dbgenomeid_chr"
+ksheader$V7<-"b_dbgenomeid_chr"
+ksfile<-read.table("65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20_g10_A5.aligncoords.gcoords.ks.txt", comment.char = "#",header =FALSE)
+colnames(ksfile)<- as.character(ksheader)
+```
+#### File parsing
+Change "|" separated entries into sep columns
+```{r}
+colnames(ksfile)
+ksfile_split<-ksfile %>% 
+      separate_wider_delim(
+        cols=c("chr1||start1||stop1||name1||strand1||type1||db_feature_id1||genome_order1||percent_id1"),
+          delim = "||", 
+            names = c("chr1","start1_og","stop1_og","name1",
+                        "strand1","type1","db_feature_id1","genome_order1","percent_id1")) %>%
+      separate_wider_delim(
+        cols=c("chr2||start2||stop2||name2||strand2||type2||db_feature_id2||genome_order2||percent_id2"),
+          delim = "||", 
+            names = c("chr2","start2_og","stop2_og","name2",
+                        "strand2","type2","db_feature_id2","genome_order2","percent_id2")) 
+## og start and stop are opposite of the other positions bc on minus strand
+```
+#### Tidy up and filter Ks data
+Table of just Ks values and gene IDs and chrs, filter by max 0.5 Ks.
+```{r}
+ks_df<- ksfile_split %>% 
+  select(Ks,chr1,start1,start1_og,stop1,name1,chr2,start2,stop2,name2) %>%
+  mutate(name1=stringr::str_replace(name1,"-RA","")) %>%
+  mutate(name2=stringr::str_replace(name2,"-RA","")) %>%
+  mutate(start1_mb = start1/1e6)
+## annotate plot - these are PAR/sex-linked region boundaries
+vlines <- c(71,261,367)
+## medians of sex linked regions
+ks_df_md <- ks_df %>% 
+  filter(Ks< 0.5) %>%
+  mutate(region = case_when((chr1 == "X" & start1_mb <=71) ~ "PAR1",
+    ((chr1 == "X" & start1_mb >71 & start1_mb <=261)) ~ "OldSLR",
+    ((chr1 == "X" & start1_mb >261 & start1_mb <=367)) ~ "NewSLR",
+    ((chr1 == "X" & start1_mb > 367 ~ "PAR2")))) %>% 
+  group_by(., region) %>% 
+  mutate(mdn = median(Ks))
+
+```
+
+```{r}
+a1<-ks_plot_auto(ks_df,"A1",NA)
+a2<-ks_plot_auto(ks_df,"A2",NA)
+a4<-ks_plot_auto(ks_df,"A4",NA)
+x<-ks_plot_auto(ks_df, "X",NA)
+cowplot::plot_grid(a1,a2,x,a4)
+ggsave("ks_all_nolimit.jpg",width=8,height=6)
+```
+
+### Exploratory plots
+#### Raw Ks values and chromosome medians
+```{r}
+ks_plot_auto<-function(df,chr,y_lim){ggplot(filter(df,chr1 == chr), aes(start1_mb)) +
+  geom_point(aes(y=Ks,alpha = 0.5)) + 
+  theme_classic() +
+  ylim(0,y_lim) +
+  xlab(paste("position on chromosome", chr, "(Mb)"))} 
+# X chr customization
+ks_plot_X<- function(df,chr,y_lim){ks_plot_auto(df,chr,y_lim) +
+  geom_vline(xintercept=vlines, linetype = "dashed") + 
+  annotate("text", x = .35*(71), y = y_lim - 0.05, label = "PAR1",size=4) +
+  annotate("text", x = .5*(71+261), y = y_lim - 0.05, label = "Old sex-linked\n region",size =4) +
+  annotate("text", x = .5*(261+367), y = y_lim - 0.05, label = "New\n sex-linked\n region",size=4) +
+  annotate("text", x = .5*(367+500), y = y_lim - 0.05, label = "PAR2",size=4) + 
+  geom_step(aes(y = mdn, colour = "red"))}
+
+
+#ggsave("ks_genes.jpg",width=6,height=4,units = "in")
+a1<-ks_plot_auto(ks_df_md,"A1",NA)
+a2<-ks_plot_auto(ks_df_md,"A2",NA)
+a4<-ks_plot_auto(ks_df_md,"A4",NA)
+cowplot::plot_grid(a1,a2,xplot,a4)
+ggsave("ks_all_nolimit.jpg",width=6,height=4)
+#ggsave("ks_genes_x.jpg",width = 6, height = 4, units = "in")
+#ks_df_md_02<-ks_df_md %>% filter(Ks<0.2)
+ks_plot_X((ks_df_md %>% filter(Ks<0.2)),"X",0.3) + ylab("Ks filter 0.2")
+ks_plot_auto(ks_df_md %>% filter(Ks<0.2),"A2",NA) + ylab("Ks filter 0.2")
+#ggsave("ks_genes_x_02.jpg",width = 6, height = 4, units = "in")
+```
+#### Ks in windows of 100 genes
+```{r}
+library(slider)
+ windowmaker<- function(df,win,ks){ks_df_md %>% filter(Ks<ks) %>%
+  group_by(chr1) %>%
+  arrange(name1,chr1, start1_mb) %>%
+  mutate(Ks_win = slider::slide_dbl(Ks, median, .before = win/2, .after = win/2,.step = 1,.complete =T))}
+ks_win100<-windowmaker(ks_df_md,win = 100,0.2)
+ks_win100_ks3<-windowmaker(ks_df_md,win=100,0.3)
+
+ks_plot_window<-function(df,chr,y_lim){ggplot(filter(df,chr1 == chr), aes(start1_mb)) +
+  geom_line(aes(y=Ks_win)) +
+  theme_classic() +
+  ylim(0,y_lim) +
+  xlab(paste("position on chromosome", chr, "(Mb)"))} 
+y_lim<-0.08
+ks_plot_window(ks_win100,"X",y_lim) + geom_vline(xintercept=vlines, linetype = "dashed") + 
+  annotate("text", x = .35*(71), y = y_lim - 0.005, label = "PAR1",size=4) +
+  annotate("text", x = .5*(71+261), y = y_lim - 0.005, label = "Old sex-linked\n region",size =4) +
+  annotate("text", x = .5*(261+367), y = y_lim - 0.005, label = "New\n sex-linked\n region",size=4) +
+  annotate("text", x = .5*(367+500), y = y_lim - 0.005, label = "PAR2",size=4) 
+#ks_plot_window(ks_win50,"X",NA)
+#ggsave("ks_genes_window_X_june22.jpg",dpi=300,width = 6, height = 4, units = "in")
+y_lim<-0.05
+#y_lim<-0.2 # limit doesnt remove data
+a1win<-ks_plot_window(ks_win100,"A1",y_lim)
+a2win<-ks_plot_window(ks_win100,"A2",y_lim)
+a4win<-ks_plot_window(ks_win100,"A4",y_lim)
+xwin<- ks_plot_window(ks_win100,"X",y_lim) + geom_vline(xintercept=vlines, linetype = "dashed")
+a2win
+cowplot::plot_grid(a1win,a2win,xwin,a4win,nrow=1)
+
+## save as one panel
+
+#ggsave("all_chr_ks_100win.jpg",dpi=300,width = 12, height = 4)
+#ggsave(plot = a1win, "a1_ks_100win.jpg",dpi=300,width = 6, height = 4)
+#ggsave(plot = a2win, "a2_ks_100win.jpg",dpi=300,width = 6, height = 4)
+#ggsave(plot = a4win, "a4_ks_100win.jpg",dpi=300,width = 6, height = 4)
+
+```
+#### Integrate salicifolius homology data
+```{r}
+sal_raw <- data.table::fread("~/Dropbox/rumex_pangenome_annotation/pg_sal_wide_synonly.txt")
+
+salkey<-readr::read_delim("input_to_output.txt",col_names =c("old","new"),show_col_types = FALSE)
+salkey<-salkey %>% mutate(fix=str_replace(old, "\\=", "\\_")) %>%
+  mutate(.,fix=str_replace(fix, "\\;", "\\_")) %>% select(fix,new)
+salkey<-as.data.frame(salkey)
+
+sal_df <- sal_raw %>% filter(salicifolius !="",hap1!="",hap2!="") %>% 
+  dplyr::select(interpChr,salicifolius,hap1,hap2,start) %>% mutate(start_salmb = start/1e6) %>% 
+  dplyr::mutate(salchr = case_when(interpChr == salkey[1,1] ~ salkey[1,2], 
+                        interpChr == salkey[2,1] ~ salkey[2,2], 
+                        interpChr == salkey[3,1] ~ salkey[3,2],
+                        interpChr == salkey[4,1] ~ salkey[4,2],
+                        interpChr == salkey[5,1] ~ salkey[5,2],
+                        interpChr == salkey[6,1] ~ salkey[6,2],
+                        interpChr == salkey[7,1] ~ salkey[7,2],
+                        interpChr == salkey[8,1] ~ salkey[8,2],
+                        interpChr == salkey[9,1] ~ salkey[9,2],
+                        interpChr == salkey[10,1] ~ salkey[10,2])) #%>% 
+  #unite(., scafpos,c("salchr","start_salmb"))
+
+
+ks_df_sal <- left_join(ks_df_md, sal_df, by = c("name1"="hap1","name2"="hap2"))
+windowmaker_sal<- function(df,win,start){df %>%
+  group_by(salchr) %>%
+  arrange(salicifolius,salchr, start) %>%
+  mutate(Ks_win = slider::slide_dbl(Ks, median, .before = win/2, .after = win/2,.step = 1,.complete =T))}
+orderlist<-c("Scaffold_4","Scaffold_8","Scaffold_7",
+             "Scaffold_5","Scaffold_3","Scaffold_6","Scaffold_10",
+             "Scaffold_1","Scaffold_2","Scaffold_9")
+
+ks_df_sal <- transform(ks_df_sal, salchr = factor(salchr, levels = orderlist))
+#levels(ks_df_sal$salchr)
+ks_win100_sal<-windowmaker_sal(ks_df_sal,win = 100, start_salmb)
+ks_win10_sal<-windowmaker_sal(ks_df_sal, win = 10, start_salmb)
+#ks_plot_window(ks_df_sal,"X",y_lim) + geom_rect(aes(color = interpChr))
+#ggplot(filter(ks_df_sal,chr1 =="X"), aes(start1_mb)) +
+#   geom_point(aes(y=Ks_win, colour = interpChr)) +
+#   theme_classic()
+# ggsave("colordot_sal_ks.jpg",dpi=300,width=6, height=4)
+#ggplot(filter(ks_df_sal,chr1 =="X"), aes(start1_mb)) +
+#  geom_line(aes(y=Ks_win)) +
+#  theme_classic()
+```
+
+#### raw Ks colored by salicifolius chromosome homology
+```{r}
+ggplot(filter(ks_df_sal,chr1 =="X"), aes(start1_mb,group = chr1)) +  
+   geom_point(aes(y=Ks, colour = salchr)) +
+   theme_classic() +
+  ylim(0,0.5) +
+  theme(panel.spacing = unit(0,'lines'))
+
+## order
+# scaf4,scaf8,scaf7,scaf5,scaf3,scaf6,scaf10
+```
+#### raw Ks organized by salicifolius gene order
+```{r}
+ggplot(filter(ks_df_sal,chr1 =="X"), aes(start_salmb,group = salchr)) +  
+   geom_point(aes(y=Ks, colour = salchr)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+  ylim(0,0.5) +
+  theme(panel.spacing = unit(0,'lines')) 
+```
+#### windowed Ks for X genes in salicifolius homologous gene order
+```{r}
+ggplot(filter(ks_win100_sal,chr1 =="X"), aes(start_salmb,group = salchr)) +  
+   geom_point(aes(y=Ks_win, colour = salchr)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+   ylim(0,0.05) +
+   theme(panel.spacing = unit(0,'lines'))
+
+ggplot(filter(ks_win10_sal,chr1 =="X", salchr == "Scaffold_7"), aes(start_salmb,group = salchr)) +  
+   geom_line(aes(y=Ks_win, colour = salchr)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+   ylim(0,0.05) +
+   theme(panel.spacing = unit(0,'lines'))
+ggplot(filter(ks_df_sal,chr1 =="X",salchr == "Scaffold_7"), aes(start1,group = salchr)) +  
+   geom_point(aes(y=Ks, colour = salchr)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+   ylim(0,0.05) +
+   theme(panel.spacing = unit(0,'lines'))
+```
+
+#### windowed Ks for all chr in sal order
+```{r}
+ggplot(filter(ks_win100_sal), aes(start_salmb,group = salchr)) +  
+   geom_point(aes(y=Ks_win, colour = salchr)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+  ylim(0,0.2) +
+  theme(panel.spacing = unit(0,'lines'))
+```
+#### Ks windows X, line and dotplot
+```{r}
+ggplot(filter(ks_win100_sal,chr1 =="X"), aes(start_salmb,group = salchr)) +  
+   geom_point(aes(y=Ks, colour = salchr,alpha=0.5)) +
+  geom_line(aes(y=Ks_win)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+  ylim(0,0.2) 
+#ggsave("combo_Ks_salord.jpg",dpi=300,width=10,height=4)
+
+ggplot(filter(ks_win100_sal,chr1 =="X"), aes(start_salmb,group = salchr)) +  
+   geom_point(aes(y=Ks, colour = salchr,alpha=0.5)) +
+  geom_line(aes(y=Ks_win)) +
+   theme_classic() +
+   facet_grid(~salchr) +
+  ylim(0,0.2) 
+```
+### Final plots for publication
+```{r}
+pubTheme <-
+  theme_cowplot(font_size = 12,rel_small	=0.75) +
+  theme(legend.title = element_blank())
+```
+
+#### basic four-panel windowed Ks
+```{r}
+#pubColours <- c("#2d9da6","#99b700","#8a53b6","#bf4824","#152944")
+library(RColorBrewer)
+ksplot03<-ggplot(filter(ks_win100_ks3,!grepl("scaffold", chr1)), aes(start1_mb,group = chr1)) +  
+   geom_line(aes(y=Ks_win, colour = chr1)) +
+   facet_grid(~chr1,scales="free_x") +
+   ylim(0,0.05) +
+  scale_color_brewer(palette = "Dark2") +
+  pubTheme +
+  xlab("Maternal Haplotype\nposition(Mb)") +
+  ylab("Median Ks\n(100 gene windows)") 
+ksplot
+ksplot03
+
+
+
+```
+#### recreate dotplot for multipanel plot
+Invert some chrs in plot
+```{r}
+## read in file of cleaned COGE anchors created from anchorwaveplots.Rmd 
+anchors_mb<-read_delim("data/anchors_mb.txt")
+##
+max_query_mb <- function(chr){max(filter(anchors_mb,newChr ==chr)$queryMb)}
+#max_query_mb("Y")                          
+
+anchors_inv<-anchors_mb %>% group_by(newChr) %>% 
+  mutate(newstartMb = case_when(newChr == "Y" ~ (max_query_mb("Y") - queryMb),
+                                newChr =="A1" ~ queryMb,
+                                newChr =="A2" ~ (max_query_mb("A2") - queryMb),
+                                newChr =="A4" ~ (max_query_mb("A4") - queryMb)))
+```
+
+
+```{r}
+anchors_inv$newChr<-factor(anchors_inv$newChr)
+dummy2 <- data.frame(newChr = c("A1","A2","A4","Y"))
+dummy2$newChr <- factor(dummy2$newChr)
+dummy3 <- data.frame(newChr = c("Y","Y","Y"))
+dummy3
+dummy3$newChr <- factor(dummy3$newChr)
+
+# New facet label names for dose variable
+chrlabs <- c("A1", "A2", "A4", "X / Y1 + Y2")
+names(chrlabs) <- c("A1", "A2", "A4", "Y")
+
+
+
+dat_text <- data.frame(
+  label = c("PAR1","Old\nSLR","New\nSLR","PAR2"),
+  newChr   = c("Y","Y","Y","Y"),
+  x = c(0.3*71, .5*(71+261), .5*(261+367),.5*(367+500)),
+  y = c(400,400,400,400))
+
+dotplot<-ggplot(anchors_inv,aes(referenceMb,newstartMb)) + 
+  geom_point(size = 0.2, aes(color=queryChr)) +
+  pubTheme +
+  scale_color_brewer(palette = "Dark2") +
+  facet_grid(~newChr,scales="free_x",labeller = labeller(newChr = chrlabs)) +
+  geom_vline(data = dummy3, aes(xintercept = 71),linetype = 'dashed') +
+  geom_vline(data = dummy3, aes(xintercept = 261),linetype = 'dashed') +
+  geom_vline(data = dummy3, aes(xintercept = 367),linetype = 'dashed') +
+  geom_text(data = dat_text,size = 4,mapping = aes(x = x, y = y, label = label)) +
+  ylim(0,430) +
+  theme(axis.text.x=element_blank(),
+        axis.title.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        legend.position="none",
+        strip.text = element_text(size = 16))+
+    ylab("Paternal Haplotype\nposition(Mb)") 
+
+dotplot  
+```
+
+#### making it multi-panel
+```{r}
+comboplot<-cowplot::plot_grid(dotplot,ksplot,nrow=2,align="v",axis="lr")
+comboplot 
+#alignedplot<-align_plots(dotplot,ksplot,align="hv",axis="tblr")
+#ggdraw(alignedplot)
+#ggsave("Ks_dotplot_combo.jpg",dpi=300,width = 8,height =4)
+```
+Need to separate out Y1 and Y2?
+#### color by hap2 chromosome
+```{r}
+
+dummy4<-data.frame(chr1 = c("X","X","X"))
+dummy4$chr1 <- factor(dummy4$chr1)
+
+ksplot2<-ggplot(filter(ks_win100,!grepl("scaffold", chr1)), aes(start1_mb,group = chr1)) +  
+   geom_line(aes(y=Ks_win, colour = chr2)) +
+   facet_grid(~chr1,scales="free_x") +
+   ylim(0,0.05) +
+   pubTheme +
+  scale_color_brewer(palette = "Dark2") +
+  geom_vline(data = dummy4, aes(xintercept = 71),linetype = 'dashed') +
+  geom_vline(data = dummy4, aes(xintercept = 261),linetype = 'dashed') +
+  geom_vline(data = dummy4, aes(xintercept = 367),linetype = 'dashed') +
+  xlab("Maternal Haplotype\nposition(Mb)") +
+  ylab("Median Ks\n(100 gene windows)") +
+  theme(strip.text.x = element_blank())
+ksplot2
+
+comboplot2<-cowplot::plot_grid(dotplot,ksplot2,nrow=2,align="v",axis="lr")
+comboplot2
+#ggsave("ksplot_dotplot_salcolors.jpg",dpi=300,width =10,height=7)
+#ggsave("ksplot_dotplot_salcolors.png",dpi=300,width =10,height=7,bg = "white")
+ggsave("ksplot_dotplot_salcolors_rezize.pdf",dpi=300,width =10,height=7)
+
+```
+To do:
+* next:gene loss plots, ASE
+* save as jpg and PNG for pub
+* figure legends in text below (goog doc)
+* list of silenced genes from ASE analysis
+   - combine w TE
+
+## chi square
+```{r}
+### KS  sal
+fishtab<-ks_df_sal %>% filter(!is.na(salicifolius)) %>%group_by(salchr,Ks>0.03) %>% summarise(n=n()) %>% filter(salchr == "Scaffold_7"|salchr == "Scaffold_8") %>% 
+  pivot_wider(names_from = salchr,values_from = n)
+fishmat<-fishtab %>% select(2,3) %>% as.matrix()
+ft<-fisher.test(fishmat)
+fishtab
+ft$estimate
+ct<-chisq.test(fishmat,correct = F)
+ct
+```
+```{r}
+
+```
+
+
+
+
+

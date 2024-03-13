@@ -1,0 +1,514 @@
+---
+title: "Single-copy genes missing and present from Rumex xyy male haplotype assemblies and Rumex salicifolius"
+output:
+  rmdformats::html_clean:
+    code_folding: show
+    default_style: light
+    toc_depth: 6
+    fig_caption: yes
+---
+
+### Setup and data cleaning
+Goal: obtain a list of 1-1 syntenic orthologs that are present in hap1 and sal, but not hap2 - as well as the opposite case. Particularly interested in the sex chromosomes.
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(vroom)
+```
+#### raw files
+Loading in wide format from query_pangenes() for each possible reference and bed files.
+```{r echo=TRUE, message=FALSE}
+# excluded non representative array members and non-syntenic othogroups (see genespace script)
+hap1_raw<-data.table::fread("pg_hap1_wide_synonly.txt")
+hap2_raw<-data.table::fread("pg_hap2_wide_synonly.txt")
+sal_raw<-data.table::fread("pg_sal_wide_synonly.txt")
+hap1_nonsyn<-data.table::fread("pg_hap1_wide.txt")
+```
+
+#### Filtering pangenome IDs w NS orths
+Eliminating pangenome ID groups w non-syn orthogroup members. This is to get a more conservative set of "gene loss" candidates. NS orths are still of interest will be analyzed separately.
+```{r}
+# NSorths in the hap1_nonsyn file are annotated with a *
+# creating a list with grepl - any entry with a *
+nsorths<-hap1_nonsyn %>% filter_all(any_vars(grepl("\\*",.)))  
+# filtering out any pgIDs in that set
+onlysyn<-hap1_raw %>% filter(!(pgID%in%nsorths$pgID)) # 31289 genes remain
+```
+
+### Gene loss on Y
+Identify genes that are shared by salicifolius and hap1, but not hap2. Adding position of PARS and correct denominator for calculating proportions.
+
+#### defining lost genes
+```{r}
+hasanortho<-onlysyn %>% 
+  filter((hap1!=""|hap2!="")&salicifolius!="")
+
+notlost<-onlysyn %>% filter((hap1!="" & hap2!="" & salicifolius!=""))
+
+hap1_yloss<-onlysyn %>% filter(hap1!="" & hap2=="" & salicifolius!="")  
+```
+
+#### label and summarise data in sex-linked regions
+Need to tabulate gene loss between PARs, oldx, newx, etc.
+```{r}
+## load relabelling and summarising functions
+source("slr_rename.R")
+
+yloss_pars<-slr_rename(hap1_yloss)
+# summarize numbers by region
+summary_yloss_pars<-summarisebyregion(yloss_pars,n_yloss)
+
+total_pangenes<-slr_rename_h1(hasanortho)
+summary_total_pangenes<-summarisebyregion(total_pangenes,n_total)
+```
+
+### BLAST gene loss confirmation
+#### obtain list of y loss candidates to blast confirm
+These genes will be BLASTed to the whole hap2 genome.
+```{r}
+genelisth1<-hap1_yloss %>% dplyr::select(hap1)
+genelisth1_chr<-hap1_yloss %>% dplyr::select(hap1,interpChr)
+#write.table(genelisth1,"genelisthap1.txt",quote=FALSE,sep="\t",row.names=F)
+```
+
+#### BLAST script
+Ran this in server where BLAST is installed.
+```{bash eval=TRUE, error=FALSE, warning=FALSE}
+cat blast_genome.sh
+```
+
+#### futher analysis of blast output in R
+```{r, warning=FALSE,message=FALSE}
+blastout<-read_tsv("blast_h2genome.tsv",
+                    col_names = c("qseqid", "sseqid", "pident", "length", 
+                                  "mismatch", "gapopen", "qstart", "qend", 
+                                  "qlen", "sstart", "send", "slen", "evalue", 
+                                  "bitscore", "score"))
+
+blast_pos<-full_join(blastout,hap2_raw,by=c("qseqid"="hap1"))  %>% add_count(qseqid) 
+### which genes, out of any, are no hits in hap2 genome
+hits<-blastout %>% dplyr::select(qseqid) %>% distinct()
+nohit<- anti_join(genelisth1,hits, by = c("hap1"="qseqid"))
+tophit_geneonly<- blastout %>% group_by(qseqid) %>%
+  mutate(the_rank  = rank(-pident, ties.method = "random")) %>%
+  filter(the_rank == 1) %>%
+  dplyr::select(-the_rank) %>% mutate(alignedpropn = length/qlen)
+tophit_geneonly
+
+```
+
+#### exclude paralogs from blast top hit list
+```{r}
+tophit_samechr<- tophit_geneonly %>%
+  left_join(genelisth1_chr,by=c("qseqid"="hap1")) %>%  
+  mutate(matchchr=if_else(interpChr == "X", "Y",
+                           if_else(interpChr == "A1","A1",
+                           if_else(interpChr == "A2","A2",
+                           if_else(interpChr == "A4","A4",NA))))) %>%
+  filter(str_detect(sseqid,matchchr))
+tophit_partial<- tophit_samechr %>% filter(alignedpropn <= 0.5)
+tophit_notloss<-tophit_samechr %>% filter(alignedpropn > 0.5)
+
+updated_genelist <- genelisth1 %>% filter(!hap1%in%tophit_notloss$qseqid)  
+#write.table(updated_genelist,"genelisthap1_blast.txt",quote=FALSE,sep="\t",row.names=F)
+```
+
+#### obtain list of lost genes per region
+```{r}
+yloss_blast<- slr_rename((hap1_yloss %>% filter(!hap1%in%tophit_notloss$qseqid)))
+
+summary_yloss_blast <-summarisebyregion(yloss_blast,n_blastconfirmedloss)
+
+yloss_partial <- slr_rename_h1((filter(hap1_yloss,hap1%in%tophit_partial$qseqid))) 
+summary_yloss_partial <-summarisebyregion(yloss_partial,n_partialloss)
+#write.csv(yloss_partial,"yloss_partial_Sept2023.csv")
+
+complete_yloss<- slr_rename_h1((hap1_yloss %>% filter(!hap1%in%tophit_notloss$qseqid))) %>% filter(!hap1%in%tophit_partial$qseqid)
+#write.csv(complete_yloss,"complete_yloss_Sept2023.csv")
+
+### adding genes not lost from blast result to list of genes with all 3 orthos ("no loss")
+retained_blast<-slr_rename_h1((hap1_yloss %>% filter(hap1%in%tophit_notloss$qseqid)))
+notlost<-slr_rename_h1(notlost)
+retained_y<-rbind(notlost, retained_blast) %>% distinct()
+#write.csv(retained_y,"retained_genes_Sept2023.csv")
+ 
+
+## combining data frames
+mylist<-list(summary_total_pangenes,summary_yloss_pars,
+             summary_yloss_blast,summary_yloss_partial)
+
+combinedsummary<-mylist %>% purrr::reduce(left_join,by="region")
+propnsummary<-combinedsummary %>%
+  mutate(propn_yloss=n_yloss/n_total, 
+         propn_blastconfirmedloss=n_blastconfirmedloss/n_total,
+         propn_partiallosstot=n_partialloss/n_total, 
+         propn_partiallossbl=n_partialloss/n_blastconfirmedloss) %>% 
+  mutate(region = factor(region, levels=c("A1","A2","A4","PAR1","OldX","NewX","PAR2"))) 
+
+print(propnsummary)
+
+papertable<-combinedsummary %>% mutate(n_completelylost = n_blastconfirmedloss-n_partialloss) %>% select(.,region,n_total,n_completelylost,n_partialloss) 
+papertable
+library(kable)
+papertable2<-propnsummary %>% mutate(propn_completelylost = propn_blastconfirmedloss-propn_partiallosstot) %>% select(.,region,n_total,propn_completelylost,propn_partiallosstot) 
+
+papertable2
+library(kableExtra)
+
+kbl(papertable2,
+    col.names = c("Region",
+                "Total genes",
+                "Completely lost genes (proportion)",
+                "Partially lost genes (proportion)"),digits = 4) %>% 
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  column_spec(3:4, width = "10em") %>% 
+  column_spec(1,width ="5em") %>%
+  save_kable(file = "ygenelosstable.html")
+
+
+
+```
+
+### control/opposite - hap1 gene loss
+is there X loss?
+```{r}
+hap2_nonsyn<-data.table::fread("pg_hap2_wide.txt")
+nsorths2<-hap2_nonsyn %>% filter_all(any_vars(grepl("\\*",.)))
+
+onlysyn2<-hap2_nonsyn %>% filter(!(pgID%in%nsorths2$pgID)) # 30505 genes remain?
+#
+hasanortho2<-onlysyn2 %>%
+   filter(((hap1!=""|hap2!="")&salicifolius!=""))
+hap2_xloss<-hasanortho2 %>% filter(hap1=="" & hap2!="" & salicifolius!="")
+
+slr_rename_h2<- function(x){mutate(x,
+   region=if_else(chr=="Y1" & end<=64000000,"NewY1",
+          if_else(chr =="Y1" & (end>64000000 & end<=272000000),"OldY1",
+          if_else(chr =="Y1" & (end > 272000000 & end <= 344000000),"PAR1",
+     if_else(chr=="Y2" & end<=121000000,"PAR2",
+     if_else(chr=="Y2"& (end>121000000 & end<=159000000),"NewY2",
+     if_else(chr=="Y2" & end>159000000, "OldY2",
+     if_else(chr=="A1","A1",
+     if_else(chr=="A2","A2",
+     if_else(chr=="A4","A4",NA))))))))))}
+
+pars_xloss<-slr_rename_h2(hap2_xloss)
+ 
+summary_xloss_pars<-summarisebyregion(pars_xloss,n_xloss)
+
+total_pangenes2<-slr_rename_h2(hasanortho2)
+ 
+summary_total_pangenes2<-summarisebyregion(total_pangenes2,n_total)
+ 
+chrpropnPAR_xloss<-full_join(summary_total_pangenes2,summary_xloss_pars,by="region") %>% 
+  mutate(., propn=n_xloss/n_total)  %>%
+  mutate(region = 
+    factor(region,levels=c("A1","A2","A4","PAR1","OldY1","NewY2","OldY2","NewY1","PAR2"))) 
+
+#write_delim(chrpropnPAR_xloss,"summary_xloss.txt")
+print(chrpropnPAR_xloss)
+```
+
+```{r}
+papertable2<-propnsummary %>% mutate(propn_completelylost = propn_blastconfirmedloss-propn_partiallosstot) %>% select(.,region,n_total,propn_completelylost,propn_partiallosstot) 
+
+papertable2
+library(kableExtra)
+
+kbl(papertable2,
+    col.names = c("Region",
+                "Number of genes with orthologs in outgroup",
+                "Proportion of genes completely absent in paternal haplotype",
+                "Proportion of genes partially absent in paternal haplotype"),digits = 4)%>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  column_spec(2:4, width = "10em") %>% 
+  column_spec(1,width ="5em") %>%
+  save_kable(file = "ygenelosstable.html")
+
+papertablex<-chrpropnPAR_xloss %>% select(region,n_total,propn)
+kbl(papertablex,
+    col.names = c("Region",
+                "Number of genes with orthologs in outgroup",
+                "Proportion of genes absent in maternal haplotype"),digits = 4) %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  column_spec(1:3, width = "10em") %>% 
+  column_spec(1,width ="5em") %>%
+  save_kable(file = "xgenelosstable.html")
+```
+
+## plotting y and x loss
+
+### bar plots
+Bar plot attempt 1: 
+X axis is category of gene (retained, completely lost, partially lost), colors in bars are location (old X, auto, PAR, etc)
+```{r}
+## create data frame
+plotdata_yloss<- propnsummary %>% 
+  mutate(n_retained = n_total - n_blastconfirmedloss) %>%
+  mutate(propncompletelylost 
+         = propn_blastconfirmedloss - propn_partiallosstot) %>%
+  select(.,region,propncompletelylost,
+         propn_partiallosstot,propn_blastconfirmedloss) %>%
+  pivot_longer(cols = 2:4)
+
+plotdata_xloss <- chrpropnPAR_xloss %>% 
+  dplyr::rename(propn_xloss=propn) %>% 
+  select(.,region,propn_xloss) %>%
+  pivot_longer(cols = 2)
+
+plotdata<-dplyr::bind_rows(plotdata_yloss,plotdata_xloss)
+
+plotdata2 <-plotdata %>% 
+  mutate(region = if_else(str_detect(region,"^A."), "Autosomes",region))%>%
+  mutate(region = if_else(str_detect(region,"PAR*"), "Pseudoautosomal region",region)) %>%
+  mutate(region = if_else(str_detect(region,"New*"), "New sex-linked region",region)) %>%
+  mutate(region = if_else(str_detect(region,"Old*"), "Old sex-linked region",region)) %>%
+  mutate(.,region = factor(region, levels=c("Old sex-linked region",
+                                            "New sex-linked region","Autosomes","Pseudoautosomal region"))) 
+
+bothlossplot<-ggplot(filter(plotdata2,name == "propn_blastconfirmedloss"|
+                name =="propn_xloss"),
+       aes(x = name,y = value,fill=region)) +geom_col(position="dodge") +
+  cowplot::theme_cowplot() +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_x_discrete(labels=c('Paternal haplotype\n', 'Maternal haplotype\n')) +
+  ylab("Proportion of\n genes lost") +
+  xlab("Comparison between haplotypes") +
+  theme(legend.position = "none") +
+  ylim(0,0.4)
+  
+
+```
+
+```{r}
+plotdata3 <-plotdata_yloss %>% 
+  mutate(region = if_else(str_detect(region,"^A."), "Autosomes",region))%>%
+  mutate(region = if_else(str_detect(region,"PAR*"), "Pseudoautosomal region",region)) %>%
+  mutate(region = if_else(str_detect(region,"New*"), "New sex-linked region",region)) %>%
+  mutate(region = if_else(str_detect(region,"Old*"), "Old sex-linked region",region)) %>%
+  mutate(.,region = factor(region, levels=c("Old sex-linked region",
+                                            "New sex-linked region","Autosomes","Pseudoautosomal region"))) 
+
+
+ylossplot<-ggplot(filter(plotdata3,name == "propncompletelylost"|
+                name =="propn_partiallosstot"),
+       aes(x = name,y = value,fill=region)) +geom_col(position="dodge") +
+  cowplot::theme_cowplot() +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_x_discrete(labels=c('partial loss\n', 'complete loss\n')) +
+  ylab("Proportion of genes lost") +
+  xlab("Partial vs. complete gene loss\n in paternal haplotype") +
+  theme(legend.position = "none") +
+  ylim(0,0.4)
+  
+
+
+library(cowplot)
+mylegend<-cowplot::get_legend(ylossplot+theme(legend.position = 'bottom',
+                    legend.justification="centre",legend.title=element_blank()))
+
+bottom_row <- plot_grid(mylegend)
+upper_row <- plot_grid(bothlossplot,ylossplot+theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(), 
+        axis.line.y=element_blank()),ncol=2,align="h",axis="tb")
+# bothlossplot<-cowplot::plot_grid(upper_row,
+#          bottom_row, 
+#         labels = c('',''), 
+#         ncol = 1, rel_heights = c(5,1))
+# bothlossplot
+#ggsave("genelossmulti_july12.pdf",dpi = 300, width = 10, height = 4, units = "in")
+#ggsave("genelossmulti_july12.jpg",dpi = 300, width = 10, height = 4, units = "in")
+```
+
+### gene loss in windows on X
+What do I need?
+- list of missing genes
+- list of missing genes along X
+- list of all genes along X
+- calculation of # of genes in # gene windows that are missing
+- sliding win?
+
+```{r}
+head(hasanortho)
+xtotal<-filter(hasanortho,chr == "X") %>%  filter(!grepl("\\|",hap1))
+ggplot(data = xtotal, aes(start)) + geom_histogram() 
+#dim(xtotal) # 3085
+## compare to bed?
+hap1bed<-read.delim("hap1.bed",col.names =c("chr","start","end","hap1"))
+xtotalbed<-filter(hap1bed,chr =="X")
+#dim(xtotalbed) # lol way more genes. 11644
+ggplot(data = xtotalbed,aes(start)) +geom_histogram()
+## plot retained genes distribution
+retained_y_filt<-filter(retained_y,chr == "X")
+ggplot(data = retained_y_filt,aes(start)) +geom_histogram()
+# similar dist
+##plot lost genes dist
+yloss_filt<-filter(yloss_blast,chr == "X" ) %>%  filter(!grepl("\\|",hap1))
+ggplot(data = yloss_filt,aes(start)) +geom_histogram()
+## spike around 100-200 Mb
+```
+#### gene loss - which files
+Distributions don't look hugely different. will continue one w the set with sal orthos to keep consistent w the analyses above - because otherwise we might mix in genes there w ortho between hap1 and hap2 2 but not sal
+
+```{r}
+mylist<-yloss_filt %>% select(hap1) %>% 
+  add_column(status = "lost")
+mydf<- xtotal %>%
+    left_join(mylist, by = c('hap1')) %>%
+  mutate(start_mb = start/1e6)
+```
+#### plotting gene loss along X
+```{r}
+# Assuming your DataFrame is named 'df'
+library(zoo)
+mydf<-slr_rename_h1(mydf)
+# Sort the DataFrame by the 'start' column
+#df <- df[order(df$start), ]
+
+# Create a rolling window of 20 observations with a step size of 1
+#rolling_window <- rollapply(df$status, by.column = FALSE,width = 20, FUN = function(x) sum(!is.na(x)), align = "right", fill = NA)
+```
+Rolling window functions with mutate
+```{r}
+rolling_window_fun<- function(values,win){rollapply(values,by.column=FALSE,width=win,FUN = function(x) (sum(!is.na(x))/win),
+                                                                   align="right",fill="extend")
+  }
+# Add the rolling window result as a new column in the DataFrame
+#df$sliding_window_count <- rolling_window
+
+# Display the updated DataFrame
+#print(df)
+#ggplot(data = df,aes(start,sliding_window_count)) +geom_line()
+
+
+#ggplot(data = df,aes(start,sliding_window_count)) +geom_line()
+#rolling_window <- rollapply(df$status, by.column = FALSE,width = 20, FUN = function(x) (sum(!is.na(x))/20), align = "right", fill = NA)
+#df$sliding_window_propn <- rolling_window
+
+df1<- mydf %>% 
+  arrange(start) %>%
+  group_by(region) %>%
+  mutate(roll_prop = rolling_window_fun(status,20)) %>%
+  ungroup()
+
+# ggplot(data = df,aes(start,sliding_window_propn)) +
+#   geom_line() +
+#   ylab("Proportion of genes lost on Y per window") +
+#   xlab("Position on X (Mb)") +
+#   theme_cowplot()
+# plots are same
+unique(df1$region)
+
+library(RColorBrewer)
+mypal<-brewer.pal(4,"Dark2")[c(2,1,4,4)] # needs to match prev plot
+
+xplot<-ggplot(data = df1,aes(start_mb,roll_prop)) +
+  geom_line(aes(color = region)) +
+  ylab("Proportion of genes\n lost on Y per window") +
+  xlab("Position on X (Mb)") +
+  theme_cowplot() +
+  scale_color_manual(values = mypal) +
+  theme(legend.position = "none")
+xplot 
+
+#View(filter(df1,start <270000000 & start >260409843))
+## to do: add to previous geneloss plot
+```
+
+#### create complete figure of X gene loss
+```{r}
+plot_grid(bothlossplot,xplot,ncol=1)
+
+plot_grid(upper_row,
+         bottom_row, xplot,
+        labels = c('A','','B'), 
+        ncol = 1, rel_heights = c(6,1,6))
+#ggsave("multipaneltest.pdf",height =8, width = 10)
+```
+
+#### geneloss along positions relative to salicifolius
+Adding positions and chromosome info for salicifolius
+```{r}
+salkey<-readr::read_delim("input_to_output.txt",col_names =c("old","new"),show_col_types = FALSE)
+salkey<-salkey %>% mutate(fix=str_replace(old, "\\=", "\\_")) %>%
+  mutate(.,fix=str_replace(fix, "\\;", "\\_")) %>% select(fix,new)
+salkey<-as.data.frame(salkey)
+
+salclean<-sal_raw %>% filter(genome == "salicifolius") %>%select(repGene,chr,start,end) %>% 
+  rename(salicifolius =repGene,salchr = chr, salstart=start, salend=end) %>% 
+  dplyr::mutate(salChr = case_when(salchr == salkey[1,1] ~ salkey[1,2], 
+                        salchr == salkey[2,1] ~ salkey[2,2], 
+                        salchr == salkey[3,1] ~ salkey[3,2],
+                        salchr == salkey[4,1] ~ salkey[4,2],
+                        salchr == salkey[5,1] ~ salkey[5,2],
+                        salchr == salkey[6,1] ~ salkey[6,2],
+                        salchr == salkey[7,1] ~ salkey[7,2],
+                        salchr == salkey[8,1] ~ salkey[8,2],
+                        salchr == salkey[9,1] ~ salkey[9,2],
+                        salchr == salkey[10,1] ~ salkey[10,2])) 
+head(salclean)
+df2<-left_join(df1,salclean)%>% drop_na(.,salChr) %>% select(.,-roll_prop) %>% mutate(salstart_mb=salstart/1e6)
+#df2
+#df2 <- df2[order(df2$salstart), ]
+#df2
+#rolling_window <- rollapply(df2$status, by.column = FALSE,width = 20, FUN = function(x) (sum(!is.na(x))/20), align = "right", fill = NA)
+```
+
+```{r}
+df3<-df2 %>%
+  group_by(salchr) %>% 
+  arrange(salstart_mb,.by_group=TRUE) %>%
+  mutate(roll_prop = rolling_window_fun(status,20)) 
+
+
+```
+
+```{r}
+
+#rolling_window_fun(df2,20)
+#rolling_window
+#df2$sliding_window_propn <- rolling_window
+head(df3)
+## scaffold_6 has all NAs - face_wrap leaves it in, need to filter out.
+salplot<-ggplot(data = filter(df3,salChr!="Scaffold_6"),aes(salstart_mb,roll_prop)) +
+  geom_line() +
+  geom_line(aes(color = region)) +
+  ylab("Proportion of genes\n lost on Y per window") +
+  xlab("Position relative to R. salicifolius gene order (Mb)") +
+  theme_cowplot() + 
+  scale_color_manual(values = mypal) +
+   theme(legend.position = "none")+
+  facet_wrap(~salChr,drop = TRUE)
+salplot  
+ggsave("sal_position_geneloss.pdf",height = 6, width = 8)
+```
+
+```{r}
+
+ggplot(data = filter(df3,salChr == "Scaffold_7"),aes(salstart,roll_prop)) +
+  geom_line() +
+  facet_wrap(~salChr) +
+  ylab("Proportion of genes lost on Y per window") +
+  xlab("Position relative to R. salicifolius gene order (Mb)") +
+  theme_cowplot()
+ggsave("sal_scaf7_ygeneloss.pdf",height = 6, width = 8)
+
+filter(df3,salchr == "scaffold_7")
+
+# plot all
+
+```
+Plot everything
+```{r}
+plot_grid(upper_row,
+         bottom_row, xplot,salplot,
+        labels = c('A','','B','C'), 
+        ncol = 1, rel_heights = c(9,1,9,12))
+ggsave("multipanel_geneloss_sept12.pdf",height =10, width = 12)
+```
+
+
+
+
+
+
