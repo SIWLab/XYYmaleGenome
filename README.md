@@ -1,34 +1,17 @@
 # Scripts and analyses for *R. hastatulus* XYY male genome paper
 
-Initial proposed formatting for plots
+[Phased assembly of neo-sex chromosomes reveals extensive Y degeneration and rapid genome evolution in Rumex hastatulus](https://www.biorxiv.org/content/10.1101/2023.09.26.559509v2))
 
-```r
-pubTheme <-
-  theme(title = element_text(size=10), #usually 14
-        text = element_text(size=8),
-        plot.background = element_rect(fill="lightgrey"),
-        strip.background = element_rect(linetype=0,linewidth=8,
-                                        fill="grey"), #facet boxes
-        strip.text = element_text(size=10), #usually 11
-        legend.background = element_rect(fill="grey"),
-        legend.text = element_text(size=8),
-        legend.title = element_text(size=10),
-        panel.background = element_rect(fill="#FFFFFF"), #plot body
-        panel.grid = element_blank() #plot body pt2
-  )
-pubColours <- c("#2d9da6","#99b700","#8a53b6","#bf4824","#152944")
-```
 
-## Input data
-
-### Gene annotation with MAKER
-
-### TE annotation with EDTA
-
-## Analysis
-
-### anchorwaveplots :: Figure 1
-Make the Hap1:Hap2 alignment look nice
+### Ks Plots
+- input: anchorwave dot plots, Ks output from coge
+- comparing haplotype A and B assemblies of a rumex hastatulus xyy male genome
+  
+### Genespace
+- synteny plots and pangene annotations
+  
+### Gene loss
+- tabulating gametologs present and absent between X and Y
 
 ### NCmaleHaplotypeTEs
 Purpose: understand where TEs are in the genome
