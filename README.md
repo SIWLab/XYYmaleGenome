@@ -1,7 +1,6 @@
 # Scripts and analyses for *R. hastatulus* XYY male genome paper
 
-[Phased assembly of neo-sex chromosomes reveals extensive Y degeneration and rapid genome evolution in Rumex hastatulus](https://www.biorxiv.org/content/10.1101/2023.09.26.559509v2))
-
+[Phased assembly of neo-sex chromosomes reveals extensive Y degeneration and rapid genome evolution in Rumex hastatulus](https://academic.oup.com/mbe/article/41/4/msae074/7644656). Sacchi, Humphries et al. 2024
 
 ### Ks Plots
 - input: anchorwave dot plots, Ks output from coge
