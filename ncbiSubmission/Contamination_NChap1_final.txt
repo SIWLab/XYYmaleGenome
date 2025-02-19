@@ -1,0 +1,69 @@
+SUBID     	BioProject	BioSample	Organism
+--------------------------------------------------------
+SUB14002425	PRJNA1046578	SAMN38503321	Rumex hastatulus
+
+[] We ran your sequences through our Contamination Screen. The screen found 
+contigs that need to be trimmed and/or excluded. The results are in the 
+Contamination.txt file posted in your submission on the WGS submission portal 
+https://submit.ncbi.nlm.nih.gov/subs/genome/. More details about the 
+contamination screening process are available at https://github.com/ncbi/fcs
+
+GenBank staff will automatically remove contaminants that are found to be 
+the entire sequence or at the end of a sequence, and will post the reports 
+and edited fasta file to the submission portal. Note that internal contamination 
+will not be automatically removed since the sequence may be misassembled and 
+therefore should be split at the contamination and resubmitted as separate sequences.
+In addition, we do not automatically remove mitochondrial sequences in 
+eukaryotic submissions. 
+
+If you selected the submission portal option "Do not automatically trim or 
+remove sequences identified as contamination" then you will need 
+to adjust the sequences appropriately and then resubmit your sequences. 
+After you remove the contamination, trim any Ns at the ends of the sequence 
+and remove any sequences that are shorter than 200 nt and not part of a 
+multi-component scaffold.
+
+WARNING: If we do not hear from you by $(add.days,14), your 
+submission will be deleted from the processing queue.
+
+Note that mismatches between the name of the adaptor/primer identified in the screen 
+and the sequencing technology used to generate the sequencing data should not be used 
+to discount the validity of the screen results as the adaptors/primers of many 
+different sequencing platforms share sequence similarity.
+
+
+
+Contamination Results:
+
+
+Adaptor:
+[] Some of the sequences hit primers or adaptors used in Illumina, 
+454, or other sequencing strategies or platforms.  Adaptor at the 
+end of a sequence should be removed. However, if adaptors are 
+present within sequences then you should strongly consider 
+splitting the sequences at the adaptor because the adaptor sequence 
+could have been the region of overlap, causing a misassembly.
+
+
+Screened 1,564 sequences, 1,510,206,782 bp.
+13 sequences to trim
+
+Trim:
+Sequence name, length, span(s), apparent source
+X	483481970	15260381..15260424	adaptor:multiple
+X	483481970	352172771..352172849	adaptor:multiple
+X	483481970	436709364..436709446	adaptor:multiple
+scaffold_1157	16811	16641..16676	adaptor:NGB00972.1
+scaffold_155	71287	1..79	adaptor:multiple
+scaffold_29	224080	159265..159300	adaptor:NGB00972.1
+scaffold_33	205152	55427..55504	adaptor:multiple
+scaffold_485	48519	42443..42478	adaptor:NGB00972.1
+scaffold_577	46000	28246..28335	adaptor:multiple
+scaffold_72	113407	3999..4077	adaptor:multiple
+scaffold_788	39401	22706..22741	adaptor:NGB00972.1
+scaffold_80	107230	14294..14321	adaptor:NGB00972.1
+scaffold_843	37959	89..124	adaptor:NGB00972.1
+scaffold_91	96712	33236..33271	adaptor:NGB00972.1
+scaffold_928	35375	35292..35375	adaptor:multiple
+
+
