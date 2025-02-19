@@ -11,7 +11,7 @@ library(cowplot)
 ```
 #### loading in files
 ```{r}
-ksheader<-read.table("65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20_g10_A5.aligncoords.gcoords.ks.txt",comment.char ="",skip = 2,nrows = 1) %>% select(-V13) %>% rename() 
+ksheader<-read.table("/Users/biancasacchi/Library/CloudStorage/Dropbox/XYYmaleGenome/65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20_g10_A5.aligncoords.gcoords.ks.txt",comment.char ="",skip = 2,nrows = 1) %>% select(-V13) %>% rename() 
 
 ```
 ##### Tweak header names and add to main file.
@@ -19,7 +19,7 @@ ksheader<-read.table("65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20
 ksheader$V1<-"Ks"
 ksheader$V3<-"a_dbgenomeid_chr"
 ksheader$V7<-"b_dbgenomeid_chr"
-ksfile<-read.table("65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20_g10_A5.aligncoords.gcoords.ks.txt", comment.char = "#",header =FALSE)
+ksfile<-read.table("/Users/biancasacchi/Library/CloudStorage/Dropbox/XYYmaleGenome/65183_65184.CDS-CDS.last.tdd10.cs0.filtered.dag.all.go_D20_g10_A5.aligncoords.gcoords.ks.txt", comment.char = "#",header =FALSE)
 colnames(ksfile)<- as.character(ksheader)
 ```
 #### File parsing
@@ -59,6 +59,9 @@ ks_df_md <- ks_df %>%
   group_by(., region) %>% 
   mutate(mdn = median(Ks))
 
+kd_filt_02_X<-ks_df_md %>% ungroup() %>% filter(chr1 == "X" & Ks <0.2) #3887
+kd_X<-ks_df_md %>% ungroup() %>% filter(chr1 == "X") #4191
+
 ```
 
 ```{r}
@@ -73,7 +76,7 @@ ggsave("ks_all_nolimit.jpg",width=8,height=6)
 ### Exploratory plots
 #### Raw Ks values and chromosome medians
 ```{r}
-ks_plot_auto<-function(df,chr,y_lim){ggplot(filter(df,chr1 == chr), aes(start1_mb)) +
+ks_plot_auto<-function(df,chr,y_lim){ggplot(filter(df,chr1 == chr), aes(s'tart1_mb)) +
   geom_point(aes(y=Ks,alpha = 0.5)) + 
   theme_classic() +
   ylim(0,y_lim) +
